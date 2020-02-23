@@ -7,7 +7,9 @@ typedef struct DBusMessageIter {
 } DBusMessageIter;
 
 typedef struct DBusError {
-    char * message;
+  int is_set;
+  char *message;
+  char padding[10];
 } DBusError;
 
 typedef struct DBusMessage DBusMessage;
@@ -28,6 +30,7 @@ void dbus_message_iter_init_append(DBusMessage *, DBusMessageIter *);
 int dbus_message_iter_append_basic(DBusMessageIter *, int, void *);
 void dbus_message_iter_open_container(DBusMessageIter *, int, char *,
                                       DBusMessageIter *);
+void dbus_message_iter_close_container(DBusMessageIter *, DBusMessageIter *);
 
 #define DBUS_TYPE_BYTE ((int)'y')
 

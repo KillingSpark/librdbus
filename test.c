@@ -5,13 +5,16 @@
 #include <stdlib.h>
 
 void make_msg(DBusMessageIter *iter) {
+  DBusMessageIter sub;
+  dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "s", &sub);
   for (int i = 0; i < 100; i++) {
     char *text = "THIS IS A STRING FROM C";
-    if (!dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &text)) {
+    if (!dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING, &text)) {
       fprintf(stderr, "Out Of Memory!\n");
       exit(1);
     }
   }
+  dbus_message_iter_close_container(iter, &sub);
 }
 
 int main(void) {

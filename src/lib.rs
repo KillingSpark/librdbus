@@ -368,6 +368,7 @@ pub extern "C" fn dbus_message_iter_append_basic(
     args.append(param);
 }
 
+#[no_mangle]
 pub extern "C" fn dbus_message_iter_open_container(
     parent: *mut DBusMessageIter,
     argtyp: libc::c_int,
@@ -381,14 +382,11 @@ pub extern "C" fn dbus_message_iter_open_container(
         return;
     }
     let sub = unsafe { &mut *sub };
-
     let c_str = unsafe {
         assert!(!argsig.is_null());
-        let arg: *const *const libc::c_char = std::mem::transmute(argsig);
-        let arg = arg.read();
-        assert!(!arg.is_null());
-        CStr::from_ptr(arg)
+        CStr::from_ptr(argsig)
     };
+    
     let argsig = c_str.to_str().unwrap();
     let mut argsig = rustbus::signature::Type::parse_description(argsig).unwrap();
     let typ = match argtyp {
@@ -406,6 +404,7 @@ pub extern "C" fn dbus_message_iter_open_container(
     }
 }
 
+#[no_mangle]
 pub extern "C" fn dbus_message_iter_close_container(
     parent: *mut DBusMessageIter,
     sub: *mut DBusMessageIter,
