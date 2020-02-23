@@ -262,8 +262,7 @@ pub extern "C" fn dbus_message_append_args(msg: *mut DBusMessage, typ1: libc::c_
             }
             let typ = unsafe { typ_ptr.read() };
 
-            let arg: *mut std::ffi::c_void = unsafe { arg_ptr.read() };
-            let param = crate::param_from_parts(typ, arg);
+            let param = crate::param_from_parts(typ, unsafe { arg_ptr.read() });
             if let Some(param) = param {
                 msg.msg.push_params(vec![param]);
             }
@@ -296,4 +295,112 @@ pub extern "C" fn dbus_message_contains_unix_fds(msg: *mut DBusMessage) -> u32 {
             1
         }
     }
+}
+
+fn c_to_rustbus_base_type(ctype: libc::c_int) -> Option<rustbus::signature::Base> {
+    match ctype {
+        crate::DBUS_TYPE_BOOLEAN => Some(rustbus::signature::Base::Boolean),
+        crate::DBUS_TYPE_BYTE => Some(rustbus::signature::Base::Byte),
+        crate::DBUS_TYPE_INT16 => Some(rustbus::signature::Base::Int16),
+        crate::DBUS_TYPE_UINT16 => Some(rustbus::signature::Base::Uint16),
+        crate::DBUS_TYPE_INT32 => Some(rustbus::signature::Base::Int32),
+        crate::DBUS_TYPE_UINT32 => Some(rustbus::signature::Base::Uint32),
+        crate::DBUS_TYPE_INT64 => Some(rustbus::signature::Base::Int64),
+        crate::DBUS_TYPE_UINT64 => Some(rustbus::signature::Base::Uint64),
+        crate::DBUS_TYPE_DOUBLE => Some(rustbus::signature::Base::Double),
+        crate::DBUS_TYPE_UNIXFD => Some(rustbus::signature::Base::UnixFd),
+        crate::DBUS_TYPE_STRING => Some(rustbus::signature::Base::String),
+        crate::DBUS_TYPE_OBJECTPATH => Some(rustbus::signature::Base::ObjectPath),
+        crate::DBUS_TYPE_SIGNATURE => Some(rustbus::signature::Base::Signature),
+        _ => None,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_get_args(msg: *mut DBusMessage, typ1: libc::c_int) -> u32 {
+    if msg.is_null() {
+        0
+    } else {
+        // TODO is this insanity correct?
+        let msg = unsafe { &mut *msg };
+        let mut typ_ptr: *const libc::c_int = &typ1;
+
+        // arg pointer always points to directly after the type
+        let mut arg_ptr: *const *mut std::ffi::c_void =
+            unsafe { std::mem::transmute(typ_ptr.add(1)) };
+
+        let mut counter = 0;
+        loop {
+            if typ1 == crate::DBUS_TYPE_INVALID {
+                break;
+            }
+            if counter >= msg.msg.params.len() {
+                return 0;
+            }
+            let typ = unsafe { typ_ptr.read() };
+            if let Some(base_type) = c_to_rustbus_base_type(typ) {
+                let param = &msg.msg.params[counter];
+                if rustbus::signature::Type::Base(base_type) == param.sig() {
+                    if let rustbus::message::Param::Base(base_param) = param {
+                        crate::write_base_param(base_param, unsafe { arg_ptr.read() });
+                    }
+                } else {
+                    // TODO What do we do here?!
+                    unimplemented!();
+                }
+                // move the pointers so that new typ points directly after old arg
+                // and new arg points directly after new typ
+                typ_ptr = unsafe { std::mem::transmute(arg_ptr.add(1)) };
+                arg_ptr = unsafe { std::mem::transmute(typ_ptr.add(1)) };
+                counter += 1;
+            } else {
+                if typ != crate::DBUS_TYPE_ARRAY {
+                    return 0;
+                }
+                let element_type_ptr: *const libc::c_int =
+                    unsafe { std::mem::transmute(arg_ptr.add(1)) };
+                let element_type = unsafe { element_type_ptr.read() };
+                arg_ptr = unsafe { std::mem::transmute(element_type_ptr.add(1)) };
+                let array_size_ptr: *const u32 = unsafe { std::mem::transmute(arg_ptr.add(1)) };
+
+                if let Some(base_type) = c_to_rustbus_base_type(element_type) {
+                    let array_size = unsafe { array_size_ptr.read() };
+                    if let rustbus::message::Param::Container(rustbus::message::Container::Array(
+                        array_param,
+                    )) = &msg.msg.params[counter]
+                    {
+                        for idx in 0..u32::min(array_size, array_param.values.len() as u32) {
+                            let param = &array_param.values[idx as usize];
+                            if rustbus::signature::Type::Base(base_type) == param.sig() {
+                                if let rustbus::message::Param::Base(base_param) = param {
+                                    crate::write_base_param(base_param, unsafe { arg_ptr.read() });
+                                }
+                            } else {
+                                // TODO What do we do here?!
+                                unimplemented!();
+                            }
+                        }
+                    } else {
+                        // TODO What do we do here?!
+                        unimplemented!();
+                    }
+                } else {
+                    return 0;
+                }
+
+                typ_ptr = unsafe { std::mem::transmute(array_size_ptr.add(1)) };
+                arg_ptr = unsafe { std::mem::transmute(typ_ptr.add(1)) };
+            }
+        }
+        1
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_get_args_valist(
+    msg: *mut DBusMessage,
+    typ1: libc::c_int,
+    _va_list: *mut std::ffi::c_void,
+) -> u32 {
+    dbus_message_get_args(msg, typ1)
 }

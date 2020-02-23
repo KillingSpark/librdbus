@@ -329,6 +329,76 @@ pub fn param_from_parts(
     Some(param)
 }
 
+pub fn write_base_param(param: &rustbus::message::Base, arg: *mut std::ffi::c_void) {
+    match param {
+        rustbus::message::Base::Boolean(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
+            *mutref = if *val { 1 } else { 0 };
+        }
+        rustbus::message::Base::Byte(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u8 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::Int16(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut i16 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::Uint16(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u16 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::Int32(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut i32 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::Uint32(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::Int64(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut i64 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::Uint64(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u64 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::Double(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u64 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::UnixFd(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
+            *mutref = *val;
+        }
+        rustbus::message::Base::String(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
+            *mutref = unsafe { std::mem::transmute(val.as_ptr()) };
+        }
+        rustbus::message::Base::ObjectPath(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
+            *mutref = unsafe { std::mem::transmute(val.as_ptr()) };
+        }
+        rustbus::message::Base::Signature(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
+            *mutref = unsafe { std::mem::transmute(val.as_ptr()) };
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn dbus_message_iter_append_basic(
     args: *mut DBusMessageIter,
