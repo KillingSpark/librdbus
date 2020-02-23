@@ -20,13 +20,17 @@ pub enum DBusBusType {
 type DBusConnection = rustbus::client_conn::RpcConn;
 type DBusMessage = rustbus::Message;
 
+#[repr(C)]
 pub struct Error {
-    error: Option<String>,
+    is_set: bool,
+    error: String,
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_error_new() -> *mut Error {
-    Box::into_raw(Box::new(Error { error: None }))
+pub extern "C" fn dbus_error_init(err: *mut Error) {
+    let err = unsafe { &mut *err };
+    err.error = String::new();
+    err.is_set = false;
 }
 
 #[no_mangle]
@@ -36,7 +40,7 @@ pub extern "C" fn dbus_error_is_set(err: *mut Error) -> libc::c_int {
     }
 
     let err: &mut Error = unsafe { &mut *err };
-    if err.error.is_some() {
+    if err.is_set {
         1
     } else {
         0
@@ -53,7 +57,7 @@ pub extern "C" fn dbus_bus_get(
         DBusBusType::DBUS_BUS_SYSTEM => rustbus::get_system_bus_path(),
         _ => {
             let err: &mut Error = unsafe { &mut *err };
-            err.error = Some(format!("Unknown bus type: {:?}", bus));
+            err.error = format!("Unknown bus type: {:?}", bus);
             return std::ptr::null_mut();
         }
     };
@@ -63,7 +67,7 @@ pub extern "C" fn dbus_bus_get(
             Err(e) => {
                 if !err.is_null() {
                     let err: &mut Error = unsafe { &mut *err };
-                    err.error = Some(format!("Could not connect to bus: {:?}", e));
+                    err.error = format!("Could not connect to bus: {:?}", e);
                 }
                 std::ptr::null_mut()
             }
@@ -71,7 +75,7 @@ pub extern "C" fn dbus_bus_get(
         Err(e) => {
             if !err.is_null() {
                 let err: &mut Error = unsafe { &mut *err };
-                err.error = Some(format!("Could open path for bus: {:?}", e));
+                err.error = format!("Could open path for bus: {:?}", e);
             }
             std::ptr::null_mut()
         }
@@ -89,7 +93,7 @@ pub extern "C" fn dbus_connection_send_hello(con: *mut DBusConnection, err: *mut
         Err(e) => {
             if !err.is_null() {
                 let err = unsafe { &mut *err };
-                err.error = Some(format!("Error sending message: {:?}", e));
+                err.error = format!("Error sending message: {:?}", e);
             }
         }
     }
@@ -147,7 +151,7 @@ pub extern "C" fn dbus_connection_send(
     if let Err(e) = con.send_message(msg.clone(), None) {
         if !err.is_null() {
             let err = unsafe { &mut *err };
-            err.error = Some(format!("Error sending message: {:?}", e));
+            err.error = format!("Error sending message: {:?}", e);
         }
     }
 }

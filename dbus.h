@@ -2,10 +2,13 @@
 
 typedef uint32_t dbus_uint32_t;
 
-struct DBusMessageIter;
 typedef struct DBusMessageIter {
   void *msg;
 } DBusMessageIter;
+
+typedef struct DBusError {
+    char * message;
+} DBusError;
 
 typedef struct DBusMessage DBusMessage;
 
@@ -18,7 +21,8 @@ typedef enum {
 void *dbus_bus_get(int bus, void *err);
 void dbus_connection_send_hello(void *, void *);
 void dbus_connection_send(void *, void *, dbus_uint32_t *);
-void *dbus_error_new();
+void dbus_error_init(DBusError *);
+int dbus_error_is_set(DBusError *);
 void *dbus_message_new_signal(char *, char *, char *);
 void dbus_message_iter_init_append(DBusMessage *, DBusMessageIter *);
 int dbus_message_iter_append_basic(DBusMessageIter *, int, void *);

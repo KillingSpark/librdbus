@@ -15,10 +15,11 @@ void make_msg(DBusMessageIter *iter) {
 }
 
 int main(void) {
-  void *error = dbus_error_new();
+  DBusError error;
+  dbus_error_init(&error);
 
-  void *con = dbus_bus_get(DBUS_BUS_SESSION, error);
-  dbus_connection_send_hello(con, error);
+  void *con = dbus_bus_get(DBUS_BUS_SESSION, &error);
+  dbus_connection_send_hello(con, &error);
   DBusMessage *sig = dbus_message_new_signal(
       "/test/signal/Object", // object name of the signal
       "test.signal.Type",    // interface name of the signal
