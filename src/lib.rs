@@ -6,8 +6,11 @@ mod tests {
     }
 }
 
+mod message;
+use message::*;
+use std::ffi::CStr;
+
 use libc;
-pub use rustbus::*;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -18,7 +21,6 @@ pub enum DBusBusType {
 }
 
 type DBusConnection = rustbus::client_conn::RpcConn;
-type DBusMessage = rustbus::Message;
 
 #[repr(C)]
 pub struct Error {
@@ -98,41 +100,6 @@ pub extern "C" fn dbus_connection_send_hello(con: *mut DBusConnection, err: *mut
         }
     }
 }
-use std::ffi::CStr;
-
-#[no_mangle]
-pub extern "C" fn dbus_message_new_signal(
-    object: *const libc::c_char,
-    interface: *const libc::c_char,
-    member: *const libc::c_char,
-) -> *mut DBusMessage {
-    let c_str = unsafe {
-        assert!(!object.is_null());
-
-        CStr::from_ptr(object)
-    };
-    let object = c_str.to_str().unwrap().to_owned();
-
-    let c_str = unsafe {
-        assert!(!interface.is_null());
-
-        CStr::from_ptr(interface)
-    };
-    let interface = c_str.to_str().unwrap().to_owned();
-
-    let c_str = unsafe {
-        assert!(!member.is_null());
-
-        CStr::from_ptr(member)
-    };
-    let member = c_str.to_str().unwrap().to_owned();
-
-    Box::into_raw(Box::new(
-        rustbus::message_builder::MessageBuilder::new()
-            .signal(interface, member, object)
-            .build(),
-    ))
-}
 
 #[no_mangle]
 pub extern "C" fn dbus_connection_send(
@@ -148,7 +115,7 @@ pub extern "C" fn dbus_connection_send(
     }
     let con = unsafe { &mut *con };
     let msg = unsafe { &mut *msg };
-    if let Err(e) = con.send_message(msg.clone(), None) {
+    if let Err(e) = con.send_message(msg.msg.clone(), None) {
         if !err.is_null() {
             let err = unsafe { &mut *err };
             err.error = format!("Error sending message: {:?}", e);
@@ -190,7 +157,7 @@ impl DBusMessageIter {
         match inner {
             MessageIterInternal::MainIter(msg) => {
                 let msg = unsafe { &mut **msg };
-                msg.push_params(vec![param]);
+                msg.msg.push_params(vec![param]);
             }
             MessageIterInternal::SubIter(sub) => {
                 sub.params.push(param);
@@ -240,6 +207,7 @@ pub extern "C" fn dbus_message_iter_init_append(msg: *mut DBusMessage, args: *mu
     };
 }
 
+pub const DBUS_TYPE_INVALID: libc::c_int = 0 as libc::c_int;
 pub const DBUS_TYPE_STRING: libc::c_int = b's' as libc::c_int;
 pub const DBUS_TYPE_BYTE: libc::c_int = b'y' as libc::c_int;
 pub const DBUS_TYPE_BOOLEAN: libc::c_int = b'b' as libc::c_int;
@@ -258,17 +226,10 @@ pub const DBUS_TYPE_VARIANT: libc::c_int = b'v' as libc::c_int;
 pub const DBUS_TYPE_STRUCT: libc::c_int = b'r' as libc::c_int;
 pub const DBUS_TYPE_DICTENTRY: libc::c_int = b'e' as libc::c_int;
 
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_append_basic(
-    args: *mut DBusMessageIter,
+pub fn param_from_parts(
     argtyp: libc::c_int,
     arg: *mut std::ffi::c_void,
-) {
-    if args.is_null() {
-        return;
-    }
-    let args = unsafe { &mut *args };
-
+) -> Option<rustbus::message::Param> {
     let param: rustbus::message::Param = match argtyp {
         DBUS_TYPE_STRING => {
             let c_str = unsafe {
@@ -363,9 +324,28 @@ pub extern "C" fn dbus_message_iter_append_basic(
             let val = unsafe { ptr.read() };
             rustbus::message::Base::UnixFd(val).into()
         }
-        _ => return,
+        _ => return None,
     };
-    args.append(param);
+    Some(param)
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_append_basic(
+    args: *mut DBusMessageIter,
+    argtyp: libc::c_int,
+    arg: *mut std::ffi::c_void,
+) -> u32 {
+    if args.is_null() {
+        return 0;
+    }
+    let args = unsafe { &mut *args };
+
+    if let Some(param) = param_from_parts(argtyp, arg) {
+        args.append(param);
+        1
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
@@ -386,7 +366,7 @@ pub extern "C" fn dbus_message_iter_open_container(
         assert!(!argsig.is_null());
         CStr::from_ptr(argsig)
     };
-    
+
     let argsig = c_str.to_str().unwrap();
     let mut argsig = rustbus::signature::Type::parse_description(argsig).unwrap();
     let typ = match argtyp {

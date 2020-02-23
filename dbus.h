@@ -24,13 +24,15 @@ void *dbus_bus_get(int bus, void *err);
 void dbus_connection_send_hello(void *, void *);
 void dbus_connection_send(void *, void *, dbus_uint32_t *);
 void dbus_error_init(DBusError *);
-int dbus_error_is_set(DBusError *);
+uint32_t dbus_error_is_set(DBusError *);
 void *dbus_message_new_signal(char *, char *, char *);
 void dbus_message_iter_init_append(DBusMessage *, DBusMessageIter *);
-int dbus_message_iter_append_basic(DBusMessageIter *, int, void *);
+uint32_t dbus_message_iter_append_basic(DBusMessageIter *, int, void *);
 void dbus_message_iter_open_container(DBusMessageIter *, int, char *,
                                       DBusMessageIter *);
 void dbus_message_iter_close_container(DBusMessageIter *, DBusMessageIter *);
+
+#define DBUS_TYPE_INVALID ((int) 0)
 
 #define DBUS_TYPE_BYTE ((int)'y')
 
