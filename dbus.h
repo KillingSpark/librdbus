@@ -103,6 +103,7 @@ void dbus_message_iter_recurse(DBusMessageIter *, DBusMessageIter *);
 char *dbus_message_iter_get_signature(DBusMessageIter*);
 
 void dbus_message_iter_get_basic(DBusMessageIter*, void *);
+uint32_t dbus_message_iter_get_element_count(DBusMessageIter *msg);
 
 uint32_t dbus_message_set_reply_serial(DBusMessage *msg, uint32_t reply_serial);
 

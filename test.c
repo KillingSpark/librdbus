@@ -46,6 +46,7 @@ void print_iter(DBusMessageIter *iter) {
   char *sig = dbus_message_iter_get_signature(iter);
   if (sig)
     printf("Iter signature: %s\n", sig);
+  printf("Iter items: %d\n", dbus_message_iter_get_element_count(iter));
   int current_type = 0;
   while ((current_type = dbus_message_iter_get_arg_type(iter)) !=
          DBUS_TYPE_INVALID) {
