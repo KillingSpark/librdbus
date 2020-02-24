@@ -18,9 +18,9 @@ void make_msg(DBusMessageIter *iter) {
   }
   dbus_message_iter_close_container(iter, &sub);
 
-  int16_t val = 0;
+  int16_t val = 256;
   dbus_message_iter_append_basic(iter, DBUS_TYPE_INT16, &val);
-  int16_t val2 = 1;
+  int16_t val2 = -128;
   dbus_message_iter_append_basic(iter, DBUS_TYPE_INT16, &val2);
 }
 
