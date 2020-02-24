@@ -60,6 +60,9 @@ impl DBusMessageIter {
     }
 
     fn close(&mut self, parent: &mut DBusMessageIter) {
+        if self.inner.is_null() {
+            return;
+        }
         let inner = unsafe { &mut *self.inner };
         match inner {
             MessageIterInternal::MainAppendIter(_msg) => {
@@ -284,93 +287,6 @@ impl DBusMessageIter {
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_init_append(
-    msg: *mut crate::DBusMessage,
-    args: *mut DBusMessageIter,
-) -> u32 {
-    if args.is_null() {
-        return 0;
-    }
-    let args = unsafe { &mut *args };
-    *args = DBusMessageIter {
-        inner: Box::into_raw(Box::new(MessageIterInternal::MainAppendIter(msg))),
-        counter: {
-            let msg = unsafe { &*msg };
-            msg.msg.params.len()
-        },
-    };
-    1
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_append_basic(
-    args: *mut DBusMessageIter,
-    argtyp: libc::c_int,
-    arg: *mut std::ffi::c_void,
-) -> u32 {
-    if args.is_null() {
-        return 0;
-    }
-    let args = unsafe { &mut *args };
-
-    if let Some(param) = crate::param_from_parts(argtyp, arg) {
-        args.append(param);
-        1
-    } else {
-        0
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_open_container(
-    parent: *mut DBusMessageIter,
-    argtyp: libc::c_int,
-    argsig: *const libc::c_char,
-    sub: *mut DBusMessageIter,
-) {
-    if parent.is_null() {
-        return;
-    }
-    if sub.is_null() {
-        return;
-    }
-    let sub = unsafe { &mut *sub };
-    let c_str = unsafe {
-        assert!(!argsig.is_null());
-        CStr::from_ptr(argsig)
-    };
-
-    let argsig = c_str.to_str().unwrap();
-    let mut argsig = rustbus::signature::Type::parse_description(argsig).unwrap();
-    let typ = match argtyp {
-        crate::DBUS_TYPE_ARRAY => rustbus::signature::Container::Array(Box::new(argsig.remove(0))),
-        crate::DBUS_TYPE_STRUCT => rustbus::signature::Container::Struct(argsig),
-        crate::DBUS_TYPE_VARIANT => rustbus::signature::Container::Variant,
-        _ => return,
-    };
-
-    *sub = DBusMessageIter {
-        inner: Box::into_raw(Box::new(MessageIterInternal::SubAppendIter(
-            SubAppendIter {
-                params: Vec::new(),
-                typ,
-            },
-        ))),
-        counter: 0,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_close_container(
-    parent: *mut DBusMessageIter,
-    sub: *mut DBusMessageIter,
-) {
-    let parent = unsafe { &mut *parent };
-    let sub = unsafe { &mut *sub };
-    sub.close(parent);
-}
-
-#[no_mangle]
 pub extern "C" fn dbus_message_iter_init(
     msg: *const crate::DBusMessage,
     args: *mut DBusMessageIter,
@@ -547,9 +463,7 @@ pub extern "C" fn dbus_message_iter_get_basic(
     }
 }
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_get_element_count(
-    sub: *mut DBusMessageIter,
-) -> libc::c_int {
+pub extern "C" fn dbus_message_iter_get_element_count(sub: *mut DBusMessageIter) -> libc::c_int {
     if sub.is_null() {
         return 0;
     }
@@ -563,10 +477,322 @@ pub extern "C" fn dbus_message_iter_get_fixed_array(
     _output: *mut std::ffi::c_void,
 ) {
     unimplemented!();
-    // If this is really needed we need to somehow allocate memory since 
+    // If this is really needed we need to somehow allocate memory since
     // we cant just point into our message struct.
     // One possibility would be to pass down a ref to the Message and
     // allocate it there. This would be suboptimal but would allow deallocation when the message gets
     // cleared
+}
 
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_init_append(
+    msg: *mut crate::DBusMessage,
+    args: *mut DBusMessageIter,
+) -> u32 {
+    if args.is_null() {
+        return 0;
+    }
+    let args = unsafe { &mut *args };
+    *args = DBusMessageIter {
+        inner: Box::into_raw(Box::new(MessageIterInternal::MainAppendIter(msg))),
+        counter: {
+            let msg = unsafe { &*msg };
+            msg.msg.params.len()
+        },
+    };
+    1
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_append_basic(
+    args: *mut DBusMessageIter,
+    argtyp: libc::c_int,
+    arg: *mut std::ffi::c_void,
+) -> u32 {
+    if args.is_null() {
+        return 0;
+    }
+    let args = unsafe { &mut *args };
+
+    if let Some(param) = crate::param_from_parts(argtyp, arg) {
+        args.append(param);
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_open_container(
+    parent: *mut DBusMessageIter,
+    argtyp: libc::c_int,
+    argsig: *const libc::c_char,
+    sub: *mut DBusMessageIter,
+) {
+    if parent.is_null() {
+        return;
+    }
+    if sub.is_null() {
+        return;
+    }
+    let sub = unsafe { &mut *sub };
+    let c_str = unsafe {
+        assert!(!argsig.is_null());
+        CStr::from_ptr(argsig)
+    };
+
+    let argsig = c_str.to_str().unwrap();
+    let mut argsig = rustbus::signature::Type::parse_description(argsig).unwrap();
+    let typ = match argtyp {
+        crate::DBUS_TYPE_ARRAY => rustbus::signature::Container::Array(Box::new(argsig.remove(0))),
+        crate::DBUS_TYPE_STRUCT => rustbus::signature::Container::Struct(argsig),
+        crate::DBUS_TYPE_VARIANT => rustbus::signature::Container::Variant,
+        _ => return,
+    };
+
+    *sub = DBusMessageIter {
+        inner: Box::into_raw(Box::new(MessageIterInternal::SubAppendIter(
+            SubAppendIter {
+                params: Vec::new(),
+                typ,
+            },
+        ))),
+        counter: 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_close_container(
+    parent: *mut DBusMessageIter,
+    sub: *mut DBusMessageIter,
+) {
+    let parent = unsafe { &mut *parent };
+    let sub = unsafe { &mut *sub };
+    sub.close(parent);
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_abandon_container(
+    parent: *mut DBusMessageIter,
+    sub: *mut DBusMessageIter,
+) {
+    // it dont think there is any harm in closing this properly
+    dbus_message_iter_close_container(parent, sub);
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_abandon_container_if_open(
+    parent: *mut DBusMessageIter,
+    sub: *mut DBusMessageIter,
+) {
+    // it dont think there is any harm in closing this properly
+    // sub.close() checks if there there is a valid interator or not anyways
+    dbus_message_iter_close_container(parent, sub);
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_set_no_reply(_msg: *mut crate::DBusMessage) {
+    unimplemented!();
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_get_no_reply(_msg: *mut crate::DBusMessage) {
+    unimplemented!();
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_set_auto_start(_msg: *mut crate::DBusMessage) {
+    unimplemented!();
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_get_auto_start(_msg: *mut crate::DBusMessage) {
+    unimplemented!();
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_get_path(msg: *mut crate::DBusMessage) -> *const libc::c_char {
+    if msg.is_null() {
+        return std::ptr::null();
+    }
+    let msg = unsafe { &*msg };
+
+    msg.msg
+        .object
+        .as_ref()
+        .map(|p| unsafe { std::mem::transmute(p.as_ptr()) })
+        .unwrap_or(std::ptr::null())
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_set_path(
+    msg: *mut crate::DBusMessage,
+    path: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!path.is_null());
+        CStr::from_ptr(path)
+    };
+    let path = c_str.to_str().unwrap();
+
+    msg.msg.object = Some(path.to_owned());
+    1
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_has_path(
+    msg: *mut crate::DBusMessage,
+    path: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!path.is_null());
+        CStr::from_ptr(path)
+    };
+    let path = c_str.to_str().unwrap();
+
+    if msg.msg.object == Some(path.to_owned()) {
+        1
+    } else {
+        0
+    }
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_get_path_decomposed(
+    msg: *mut crate::DBusMessage,
+    output: *mut *const *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &*msg };
+
+    if let Some(object) = &msg.msg.object {
+        let mut ptr_array = Vec::new();
+        for element in object.split('/') {
+            let cstr = std::ffi::CString::new(element).unwrap();
+            ptr_array.push(cstr.as_ptr());
+            std::mem::forget(cstr);
+        }
+        ptr_array.push(std::ptr::null());
+
+        let boxed = Box::new(ptr_array);
+        let array_ptr = boxed.as_ref().as_ptr();
+        
+        // forget box. Needs to be freed in dbus_free_string_array()
+        let _ptr = Box::into_raw(boxed);
+        unsafe { *output = array_ptr };
+    }
+    1
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_get_interface(msg: *mut crate::DBusMessage) -> *const libc::c_char {
+    if msg.is_null() {
+        return std::ptr::null();
+    }
+    let msg = unsafe { &*msg };
+
+    msg.msg
+        .interface
+        .as_ref()
+        .map(|p| unsafe { std::mem::transmute(p.as_ptr()) })
+        .unwrap_or(std::ptr::null())
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_set_interface(
+    msg: *mut crate::DBusMessage,
+    interface: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!interface.is_null());
+        CStr::from_ptr(interface)
+    };
+    let path = c_str.to_str().unwrap();
+
+    msg.msg.interface = Some(path.to_owned());
+    1
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_has_interface(
+    msg: *mut crate::DBusMessage,
+    interface: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!interface.is_null());
+        CStr::from_ptr(interface)
+    };
+    let interface = c_str.to_str().unwrap();
+
+    if msg.msg.interface == Some(interface.to_owned()) {
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_get_member(msg: *mut crate::DBusMessage) -> *const libc::c_char {
+    if msg.is_null() {
+        return std::ptr::null();
+    }
+    let msg = unsafe { &*msg };
+
+    msg.msg
+        .member
+        .as_ref()
+        .map(|p| unsafe { std::mem::transmute(p.as_ptr()) })
+        .unwrap_or(std::ptr::null())
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_set_member(
+    msg: *mut crate::DBusMessage,
+    member: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!member.is_null());
+        CStr::from_ptr(member)
+    };
+    let path = c_str.to_str().unwrap();
+
+    msg.msg.member = Some(path.to_owned());
+    1
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_has_member(
+    msg: *mut crate::DBusMessage,
+    member: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!member.is_null());
+        CStr::from_ptr(member)
+    };
+    let member = c_str.to_str().unwrap();
+
+    if msg.msg.member == Some(member.to_owned()) {
+        1
+    } else {
+        0
+    }
 }
