@@ -526,3 +526,23 @@ pub extern "C" fn dbus_message_iter_get_signature(
     let ptr = cstr.into_raw();
     ptr
 }
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_get_basic(
+    sub: *mut DBusMessageIter,
+    arg: *mut std::ffi::c_void,
+) {
+    if sub.is_null() {
+        return;
+    }
+    let sub = unsafe { &mut *sub };
+
+    if let Some(RustbusParamOrDictEntry::Rustbus(rustbus::message::Param::Base(base_param))) =
+        sub.current()
+    {
+        crate::write_base_param(base_param, arg);
+    }
+    if let Some(RustbusParamOrDictEntry::RustbusBase(base_param)) = sub.current() {
+        crate::write_base_param(base_param, arg);
+    }
+}

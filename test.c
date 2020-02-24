@@ -28,13 +28,29 @@ void print_iter(DBusMessageIter *iter) {
   while ((current_type = dbus_message_iter_get_arg_type(iter)) !=
          DBUS_TYPE_INVALID) {
     printf("TYPE: %c\n", current_type);
-    int element_type = dbus_message_iter_get_element_type(iter);
-    if (element_type) {
-      printf("ELEMENT_TYPE: %c\n", element_type);
-      DBusMessageIter sub_iter;
-      dbus_message_iter_recurse(iter, &sub_iter);
-      print_iter(&sub_iter);
+
+    switch (current_type) {
+    case DBUS_TYPE_STRING: {
+      char *string;
+      dbus_message_iter_get_basic(iter, &string);
+      printf("String: %s\n", string);
+      break;
     }
+    case DBUS_TYPE_ARRAY: {
+      int element_type = dbus_message_iter_get_element_type(iter);
+      if (element_type) {
+        printf("ELEMENT_TYPE: %c\n", element_type);
+        DBusMessageIter sub_iter;
+        dbus_message_iter_recurse(iter, &sub_iter);
+        print_iter(&sub_iter);
+      } else {
+        printf("Couldnt get type for array elements!");
+        exit(1);
+      }
+      break;
+    }
+    }
+
     dbus_message_iter_next(iter);
   }
   printf("End printing iter\n");
