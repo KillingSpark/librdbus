@@ -21,7 +21,6 @@ pub enum DBusBusType {
     DBUS_BUS_STARTER,
 }
 
-
 pub const DBUS_TYPE_INVALID: libc::c_int = 0 as libc::c_int;
 pub const DBUS_TYPE_STRING: libc::c_int = b's' as libc::c_int;
 pub const DBUS_TYPE_BYTE: libc::c_int = b'y' as libc::c_int;
@@ -44,25 +43,25 @@ pub const DBUS_TYPE_DICTENTRY: libc::c_int = b'e' as libc::c_int;
 type DBusConnection = rustbus::client_conn::RpcConn;
 
 #[repr(C)]
-pub struct Error {
+pub struct DBusError {
     is_set: bool,
     error: String,
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_error_init(err: *mut Error) {
+pub extern "C" fn dbus_error_init(err: *mut DBusError) {
     let err = unsafe { &mut *err };
     err.error = String::new();
     err.is_set = false;
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_error_is_set(err: *mut Error) -> libc::c_int {
+pub extern "C" fn dbus_error_is_set(err: *mut DBusError) -> libc::c_int {
     if err.is_null() {
         return 0;
     }
 
-    let err: &mut Error = unsafe { &mut *err };
+    let err: &mut DBusError = unsafe { &mut *err };
     if err.is_set {
         1
     } else {
@@ -71,15 +70,12 @@ pub extern "C" fn dbus_error_is_set(err: *mut Error) -> libc::c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_bus_get(
-    bus: DBusBusType,
-    err: *mut Error,
-) -> *mut rustbus::client_conn::RpcConn {
+pub extern "C" fn dbus_bus_get(bus: DBusBusType, err: *mut DBusError) -> *mut DBusConnection {
     let path = match bus {
         DBusBusType::DBUS_BUS_SESSION => rustbus::get_session_bus_path(),
         DBusBusType::DBUS_BUS_SYSTEM => rustbus::get_system_bus_path(),
         _ => {
-            let err: &mut Error = unsafe { &mut *err };
+            let err: &mut DBusError = unsafe { &mut *err };
             err.error = format!("Unknown bus type: {:?}", bus);
             return std::ptr::null_mut();
         }
@@ -89,7 +85,7 @@ pub extern "C" fn dbus_bus_get(
             Ok(con) => Box::into_raw(Box::new(rustbus::client_conn::RpcConn::new(con))),
             Err(e) => {
                 if !err.is_null() {
-                    let err: &mut Error = unsafe { &mut *err };
+                    let err: &mut DBusError = unsafe { &mut *err };
                     err.error = format!("Could not connect to bus: {:?}", e);
                 }
                 std::ptr::null_mut()
@@ -97,7 +93,7 @@ pub extern "C" fn dbus_bus_get(
         },
         Err(e) => {
             if !err.is_null() {
-                let err: &mut Error = unsafe { &mut *err };
+                let err: &mut DBusError = unsafe { &mut *err };
                 err.error = format!("Could open path for bus: {:?}", e);
             }
             std::ptr::null_mut()
@@ -106,19 +102,20 @@ pub extern "C" fn dbus_bus_get(
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_connection_send_hello(con: *mut DBusConnection, err: *mut Error) {
+pub extern "C" fn dbus_connection_send_hello(con: *mut DBusConnection, serial: *mut u32) -> u32 {
     if con.is_null() {
-        return;
+        return 0;
     }
     let con = unsafe { &mut *con };
     match con.send_message(rustbus::standard_messages::hello(), None) {
-        Ok(_) => {}
-        Err(e) => {
-            if !err.is_null() {
-                let err = unsafe { &mut *err };
-                err.error = format!("Error sending message: {:?}", e);
+        Ok(msg) => {
+            if !serial.is_null() {
+                let serial = unsafe { &mut *serial };
+                *serial = msg.serial.unwrap();
             }
+            1
         }
+        Err(_e) => 0,
     }
 }
 
@@ -126,25 +123,28 @@ pub extern "C" fn dbus_connection_send_hello(con: *mut DBusConnection, err: *mut
 pub extern "C" fn dbus_connection_send(
     con: *mut DBusConnection,
     msg: *mut DBusMessage,
-    err: *mut Error,
-) {
+    serial: *mut u32,
+) -> u32 {
     if con.is_null() {
-        return;
+        return 0;
     }
     if msg.is_null() {
-        return;
+        return 0;
     }
     let con = unsafe { &mut *con };
     let msg = unsafe { &mut *msg };
     let msg = msg.msg.clone();
     let r = con.send_message(msg, None);
-    
 
-    if let Err(e) = r {
-        if !err.is_null() {
-            let err = unsafe { &mut *err };
-            err.error = format!("Error sending message: {:?}", e);
+    match r {
+        Ok(msg) => {
+            if !serial.is_null() {
+                let serial = unsafe { &mut *serial };
+                *serial = msg.serial.unwrap();
+            }
+            1
         }
+        Err(_e) => 0,
     }
 }
 

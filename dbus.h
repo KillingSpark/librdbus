@@ -14,6 +14,7 @@ typedef struct DBusError {
 } DBusError;
 
 typedef struct DBusMessage DBusMessage;
+typedef struct DBusConnection DBusConnection;
 
 typedef enum {
   DBUS_BUS_SESSION, /**< The login session bus */
@@ -21,19 +22,86 @@ typedef enum {
   DBUS_BUS_STARTER  /**< The bus that started us, if any */
 } DBusBusType;
 
-void *dbus_bus_get(int bus, void *err);
-void dbus_connection_send_hello(void *, void *);
-void dbus_connection_send(void *, void *, dbus_uint32_t *);
-void dbus_error_init(DBusError *);
-uint32_t dbus_error_is_set(DBusError *);
-void *dbus_message_new_signal(char *, char *, char *);
-void dbus_message_iter_init_append(DBusMessage *, DBusMessageIter *);
-uint32_t dbus_message_iter_append_basic(DBusMessageIter *, int, void *);
-void dbus_message_iter_open_container(DBusMessageIter *, int, char *,
-                                      DBusMessageIter *);
-void dbus_message_iter_close_container(DBusMessageIter *, DBusMessageIter *);
+DBusConnection *dbus_bus_get(DBusBusType bus, DBusError *err);
 
-#define DBUS_TYPE_INVALID ((int) 0)
+void dbus_connection_close(DBusConnection *con);
+
+uint32_t dbus_connection_send(DBusConnection *con, DBusMessage *msg, uint32_t *serial);
+
+uint32_t dbus_connection_send_hello(DBusConnection *con, uint32_t *serial);
+
+void dbus_error_init(DBusError *err);
+
+int dbus_error_is_set(DBusError *err);
+
+uint32_t dbus_message_append_args(DBusMessage *msg, int typ1);
+
+uint32_t dbus_message_append_args_valist(DBusMessage *msg, int typ1,
+                                         void *_va_list);
+
+uint32_t dbus_message_contains_unix_fds(DBusMessage *msg);
+
+DBusMessage *dbus_message_copy(const DBusMessage *msg);
+
+uint32_t dbus_message_get_args(DBusMessage *msg, int typ1);
+
+uint32_t dbus_message_get_args_valist(DBusMessage *msg, int typ1,
+                                      void *_va_list);
+
+uint32_t dbus_message_get_reply_serial(const DBusMessage *msg);
+
+const char *dbus_message_get_sender(const DBusMessage *msg);
+
+uint32_t dbus_message_get_serial(const DBusMessage *msg);
+
+int dbus_message_get_type(DBusMessage *msg);
+
+uint32_t dbus_message_iter_append_basic(DBusMessageIter *args, int argtyp,
+                                        void *arg);
+
+void dbus_message_iter_close_container(DBusMessageIter *parent,
+                                       DBusMessageIter *sub);
+
+int dbus_message_iter_get_arg_type(DBusMessageIter *args);
+
+int dbus_message_iter_get_element_type(DBusMessageIter *args);
+
+uint32_t dbus_message_iter_has_next(DBusMessageIter *args);
+
+uint32_t dbus_message_iter_init(const DBusMessage *msg, DBusMessageIter *args);
+
+uint32_t dbus_message_iter_init_append(DBusMessage *msg, DBusMessageIter *args);
+
+uint32_t dbus_message_iter_next(DBusMessageIter *args);
+
+void dbus_message_iter_open_container(DBusMessageIter *parent, int argtyp,
+                                      const char *argsig, DBusMessageIter *sub);
+
+DBusMessage *dbus_message_new(int typ);
+
+DBusMessage *dbus_message_new_error(const DBusMessage *call,
+                                    const char *errname, const char *errmsg);
+
+DBusMessage *dbus_message_new_error_printf(const DBusMessage *_call,
+                                           const char *_errname,
+                                           const char *_errmsg);
+
+DBusMessage *dbus_message_new_method_call(const char *dest, const char *object,
+                                          const char *interface,
+                                          const char *member);
+
+DBusMessage *dbus_message_new_method_return(const DBusMessage *call);
+
+DBusMessage *dbus_message_new_signal(const char *object, const char *interface,
+                                     const char *member);
+
+DBusMessage *dbus_message_ref(DBusMessage *msg);
+
+uint32_t dbus_message_set_reply_serial(DBusMessage *msg, uint32_t reply_serial);
+
+void dbus_message_unref(DBusMessage *msg);
+
+#define DBUS_TYPE_INVALID ((int)0)
 
 #define DBUS_TYPE_BYTE ((int)'y')
 
