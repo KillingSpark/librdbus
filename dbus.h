@@ -4,6 +4,7 @@ typedef uint32_t dbus_uint32_t;
 
 typedef struct DBusMessageIter {
   void *msg;
+  uint64_t counter;
 } DBusMessageIter;
 
 typedef struct DBusError {

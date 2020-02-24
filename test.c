@@ -4,11 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+char *text = "THIS IS A STRING FROM C";
+
 void make_msg(DBusMessageIter *iter) {
   DBusMessageIter sub;
   dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "s", &sub);
-  for (int i = 0; i < 100; i++) {
-    char *text = "THIS IS A STRING FROM C";
+  for (int i = 0; i < 2; i++) {
     if (!dbus_message_iter_append_basic(&sub, DBUS_TYPE_STRING, &text)) {
       fprintf(stderr, "Out Of Memory!\n");
       exit(1);

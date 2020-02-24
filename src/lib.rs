@@ -7,6 +7,7 @@ mod tests {
 }
 
 mod message;
+mod message_iter;
 use message::*;
 use std::ffi::CStr;
 
@@ -19,6 +20,26 @@ pub enum DBusBusType {
     DBUS_BUS_SYSTEM,
     DBUS_BUS_STARTER,
 }
+
+
+pub const DBUS_TYPE_INVALID: libc::c_int = 0 as libc::c_int;
+pub const DBUS_TYPE_STRING: libc::c_int = b's' as libc::c_int;
+pub const DBUS_TYPE_BYTE: libc::c_int = b'y' as libc::c_int;
+pub const DBUS_TYPE_BOOLEAN: libc::c_int = b'b' as libc::c_int;
+pub const DBUS_TYPE_INT16: libc::c_int = b'n' as libc::c_int;
+pub const DBUS_TYPE_UINT16: libc::c_int = b'q' as libc::c_int;
+pub const DBUS_TYPE_INT32: libc::c_int = b'i' as libc::c_int;
+pub const DBUS_TYPE_UINT32: libc::c_int = b'u' as libc::c_int;
+pub const DBUS_TYPE_INT64: libc::c_int = b'x' as libc::c_int;
+pub const DBUS_TYPE_UINT64: libc::c_int = b't' as libc::c_int;
+pub const DBUS_TYPE_DOUBLE: libc::c_int = b'd' as libc::c_int;
+pub const DBUS_TYPE_OBJECTPATH: libc::c_int = b'o' as libc::c_int;
+pub const DBUS_TYPE_SIGNATURE: libc::c_int = b'g' as libc::c_int;
+pub const DBUS_TYPE_UNIXFD: libc::c_int = b'h' as libc::c_int;
+pub const DBUS_TYPE_ARRAY: libc::c_int = b'a' as libc::c_int;
+pub const DBUS_TYPE_VARIANT: libc::c_int = b'v' as libc::c_int;
+pub const DBUS_TYPE_STRUCT: libc::c_int = b'r' as libc::c_int;
+pub const DBUS_TYPE_DICTENTRY: libc::c_int = b'e' as libc::c_int;
 
 type DBusConnection = rustbus::client_conn::RpcConn;
 
@@ -115,7 +136,11 @@ pub extern "C" fn dbus_connection_send(
     }
     let con = unsafe { &mut *con };
     let msg = unsafe { &mut *msg };
-    if let Err(e) = con.send_message(msg.msg.clone(), None) {
+    let msg = msg.msg.clone();
+    let r = con.send_message(msg, None);
+    
+
+    if let Err(e) = r {
         if !err.is_null() {
             let err = unsafe { &mut *err };
             err.error = format!("Error sending message: {:?}", e);
@@ -133,98 +158,6 @@ pub extern "C" fn dbus_connection_close(con: *mut DBusConnection) {
         //dropped here -> free'd
     }
 }
-
-pub struct SubIter {
-    params: Vec<rustbus::message::Param>,
-    typ: rustbus::signature::Container,
-}
-
-enum MessageIterInternal {
-    // pushes contents into message
-    MainIter(*mut DBusMessage),
-    // pushes contents into parent when closed
-    SubIter(SubIter),
-}
-
-#[repr(C)]
-pub struct DBusMessageIter {
-    inner: *mut MessageIterInternal,
-}
-
-impl DBusMessageIter {
-    fn append(&mut self, param: rustbus::message::Param) {
-        let inner = unsafe { &mut *self.inner };
-        match inner {
-            MessageIterInternal::MainIter(msg) => {
-                let msg = unsafe { &mut **msg };
-                msg.msg.push_params(vec![param]);
-            }
-            MessageIterInternal::SubIter(sub) => {
-                sub.params.push(param);
-            }
-        }
-    }
-
-    fn close(&mut self, parent: &mut DBusMessageIter) {
-        let inner = unsafe { &mut *self.inner };
-        match inner {
-            MessageIterInternal::MainIter(_msg) => {
-                // nothing to do here
-            }
-            MessageIterInternal::SubIter(sub) => match &sub.typ {
-                rustbus::signature::Container::Array(sig) => parent.append(
-                    rustbus::message::Container::Array(rustbus::message::Array {
-                        element_sig: sig.as_ref().clone(),
-                        values: sub.params.clone(),
-                    })
-                    .into(),
-                ),
-                rustbus::signature::Container::Dict(_, _) => unimplemented!(),
-                rustbus::signature::Container::Variant => parent.append(
-                    rustbus::message::Container::Variant(Box::new(rustbus::message::Variant {
-                        sig: sub.params[0].sig(),
-                        value: sub.params[0].clone(),
-                    }))
-                    .into(),
-                ),
-                rustbus::signature::Container::Struct(_sigs) => {
-                    parent.append(rustbus::message::Container::Struct(sub.params.clone()).into())
-                }
-            },
-        }
-        std::mem::drop(unsafe { Box::from_raw(self.inner) });
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_init_append(msg: *mut DBusMessage, args: *mut DBusMessageIter) {
-    if args.is_null() {
-        return;
-    }
-    let args = unsafe { &mut *args };
-    *args = DBusMessageIter {
-        inner: Box::into_raw(Box::new(MessageIterInternal::MainIter(msg))),
-    };
-}
-
-pub const DBUS_TYPE_INVALID: libc::c_int = 0 as libc::c_int;
-pub const DBUS_TYPE_STRING: libc::c_int = b's' as libc::c_int;
-pub const DBUS_TYPE_BYTE: libc::c_int = b'y' as libc::c_int;
-pub const DBUS_TYPE_BOOLEAN: libc::c_int = b'b' as libc::c_int;
-pub const DBUS_TYPE_INT16: libc::c_int = b'n' as libc::c_int;
-pub const DBUS_TYPE_UINT16: libc::c_int = b'q' as libc::c_int;
-pub const DBUS_TYPE_INT32: libc::c_int = b'i' as libc::c_int;
-pub const DBUS_TYPE_UINT32: libc::c_int = b'u' as libc::c_int;
-pub const DBUS_TYPE_INT64: libc::c_int = b'x' as libc::c_int;
-pub const DBUS_TYPE_UINT64: libc::c_int = b't' as libc::c_int;
-pub const DBUS_TYPE_DOUBLE: libc::c_int = b'd' as libc::c_int;
-pub const DBUS_TYPE_OBJECTPATH: libc::c_int = b'o' as libc::c_int;
-pub const DBUS_TYPE_SIGNATURE: libc::c_int = b'g' as libc::c_int;
-pub const DBUS_TYPE_UNIXFD: libc::c_int = b'h' as libc::c_int;
-pub const DBUS_TYPE_ARRAY: libc::c_int = b'a' as libc::c_int;
-pub const DBUS_TYPE_VARIANT: libc::c_int = b'v' as libc::c_int;
-pub const DBUS_TYPE_STRUCT: libc::c_int = b'r' as libc::c_int;
-pub const DBUS_TYPE_DICTENTRY: libc::c_int = b'e' as libc::c_int;
 
 pub fn param_from_parts(
     argtyp: libc::c_int,
@@ -397,69 +330,4 @@ pub fn write_base_param(param: &rustbus::message::Base, arg: *mut std::ffi::c_vo
             *mutref = unsafe { std::mem::transmute(val.as_ptr()) };
         }
     }
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_append_basic(
-    args: *mut DBusMessageIter,
-    argtyp: libc::c_int,
-    arg: *mut std::ffi::c_void,
-) -> u32 {
-    if args.is_null() {
-        return 0;
-    }
-    let args = unsafe { &mut *args };
-
-    if let Some(param) = param_from_parts(argtyp, arg) {
-        args.append(param);
-        1
-    } else {
-        0
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_open_container(
-    parent: *mut DBusMessageIter,
-    argtyp: libc::c_int,
-    argsig: *const libc::c_char,
-    sub: *mut DBusMessageIter,
-) {
-    if parent.is_null() {
-        return;
-    }
-    if sub.is_null() {
-        return;
-    }
-    let sub = unsafe { &mut *sub };
-    let c_str = unsafe {
-        assert!(!argsig.is_null());
-        CStr::from_ptr(argsig)
-    };
-
-    let argsig = c_str.to_str().unwrap();
-    let mut argsig = rustbus::signature::Type::parse_description(argsig).unwrap();
-    let typ = match argtyp {
-        DBUS_TYPE_ARRAY => rustbus::signature::Container::Array(Box::new(argsig.remove(0))),
-        DBUS_TYPE_STRUCT => rustbus::signature::Container::Struct(argsig),
-        DBUS_TYPE_VARIANT => rustbus::signature::Container::Variant,
-        _ => return,
-    };
-
-    *sub = DBusMessageIter {
-        inner: Box::into_raw(Box::new(MessageIterInternal::SubIter(SubIter {
-            params: Vec::new(),
-            typ,
-        }))),
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_message_iter_close_container(
-    parent: *mut DBusMessageIter,
-    sub: *mut DBusMessageIter,
-) {
-    let parent = unsafe { &mut *parent };
-    let sub = unsafe { &mut *sub };
-    sub.close(parent);
 }
