@@ -109,12 +109,8 @@ impl DBusMessageIter {
                 let dict = unsafe { &**dict };
                 dict.map.len()
             }
-            MessageIterInternal::VariantIter(_) => {
-                1
-            }
-            MessageIterInternal::DictEntryIter(_, _) => {
-                2
-            }
+            MessageIterInternal::VariantIter(_) => 1,
+            MessageIterInternal::DictEntryIter(_, _) => 2,
             MessageIterInternal::StructIter(values) => {
                 let values = unsafe { &**values };
                 values.len()
@@ -126,7 +122,7 @@ impl DBusMessageIter {
         let len = self.len();
         if len == 0 {
             false
-        } else{
+        } else {
             self.counter < len - 1
         }
     }
@@ -182,11 +178,68 @@ impl DBusMessageIter {
         }
     }
 
+    fn sig(&self) -> Option<Vec<RustbusTypeOrDictEntry>> {
+        let inner = unsafe { &mut *self.inner };
+        match inner {
+            MessageIterInternal::MainAppendIter(_) => None,
+            MessageIterInternal::SubAppendIter(_) => None,
+            MessageIterInternal::MainIter(msg) => {
+                let msg = unsafe { &**msg };
+                let mut sigs = Vec::new();
+                for p in &msg.msg.params {
+                    sigs.push(RustbusTypeOrDictEntry::Rustbus(p.sig()))
+                }
+                Some(sigs)
+            }
+            MessageIterInternal::ArrayIter(arr) => {
+                let arr = unsafe { &**arr };
+                Some(vec![RustbusTypeOrDictEntry::Rustbus(
+                    rustbus::signature::Type::Container(rustbus::signature::Container::Array(
+                        Box::new(arr.element_sig.clone()),
+                    )),
+                )])
+            }
+            MessageIterInternal::DictIter(dict) => {
+                let dict = unsafe { &**dict };
+                Some(vec![RustbusTypeOrDictEntry::Rustbus(
+                    rustbus::signature::Type::Container(rustbus::signature::Container::Dict(
+                        dict.key_sig.clone(),
+                        Box::new(dict.value_sig.clone()),
+                    )),
+                )])
+            }
+            MessageIterInternal::VariantIter(_var) => Some(vec![RustbusTypeOrDictEntry::Rustbus(
+                rustbus::signature::Type::Container(rustbus::signature::Container::Variant),
+            )]),
+            MessageIterInternal::DictEntryIter(key, val) => {
+                let key = unsafe { &**key };
+                let val = unsafe { &**val };
+                if let rustbus::signature::Type::Base(key_sig) = key.sig() {
+                    Some(vec![RustbusTypeOrDictEntry::DictEntry(key_sig, val.sig())])
+                } else {
+                    None
+                }
+            }
+            MessageIterInternal::StructIter(values) => {
+                let values = unsafe { &**values };
+                let mut sigs = Vec::new();
+                for p in values {
+                    sigs.push(p.sig())
+                }
+                Some(vec![RustbusTypeOrDictEntry::Rustbus(
+                    rustbus::signature::Type::Container(rustbus::signature::Container::Struct(
+                        sigs,
+                    )),
+                )])
+            }
+        }
+    }
+
     fn current_type(&self) -> Option<RustbusTypeOrDictEntry> {
         if self.finished() {
             return None;
         }
-        
+
         let current = self.current();
         match current {
             Some(RustbusParamOrDictEntry::Rustbus(p)) => {
@@ -439,4 +492,37 @@ pub extern "C" fn dbus_message_iter_recurse(
         inner: Box::into_raw(Box::new(iter)),
         counter: 0,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_get_signature(
+    sub: *mut DBusMessageIter,
+) -> *const libc::c_char {
+    if sub.is_null() {
+        return std::ptr::null();
+    }
+    let sub = unsafe { &mut *sub };
+    let mut sigs_str = String::new();
+    if let Some(sigs) = sub.sig() {
+        for sig in sigs {
+            match sig {
+                RustbusTypeOrDictEntry::Rustbus(typ) => {
+                    typ.to_str(&mut sigs_str);
+                }
+                RustbusTypeOrDictEntry::DictEntry(key, val) => {
+                    sigs_str.push('{');
+                    key.to_str(&mut sigs_str);
+                    val.to_str(&mut sigs_str);
+                    sigs_str.push('}');
+                }
+            }
+        }
+    } else {
+        return std::ptr::null();
+    }
+
+    let cstr = std::ffi::CString::new(sigs_str.as_str()).unwrap();
+    // needs to be freed somehow in dbus_free
+    let ptr = cstr.into_raw();
+    ptr
 }

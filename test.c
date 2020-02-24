@@ -20,6 +20,10 @@ void make_msg(DBusMessageIter *iter) {
 }
 
 void print_iter(DBusMessageIter *iter) {
+  printf("Start printing iter\n");
+  char *sig = dbus_message_iter_get_signature(iter);
+  if (sig)
+    printf("Iter signature: %s\n", sig);
   int current_type = 0;
   while ((current_type = dbus_message_iter_get_arg_type(iter)) !=
          DBUS_TYPE_INVALID) {
@@ -33,6 +37,7 @@ void print_iter(DBusMessageIter *iter) {
     }
     dbus_message_iter_next(iter);
   }
+  printf("End printing iter\n");
 }
 
 void print_msg(DBusMessage *msg) {

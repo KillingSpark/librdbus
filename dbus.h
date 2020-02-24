@@ -100,6 +100,8 @@ DBusMessage *dbus_message_ref(DBusMessage *msg);
 
 void dbus_message_iter_recurse(DBusMessageIter *, DBusMessageIter *);
 
+char *dbus_message_iter_get_signature(DBusMessageIter*);
+
 uint32_t dbus_message_set_reply_serial(DBusMessage *msg, uint32_t reply_serial);
 
 void dbus_message_unref(DBusMessage *msg);
