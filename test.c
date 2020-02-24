@@ -17,6 +17,28 @@ void make_msg(DBusMessageIter *iter) {
     }
   }
   dbus_message_iter_close_container(iter, &sub);
+
+  int16_t val = 0;
+  dbus_message_iter_append_basic(iter, DBUS_TYPE_INT16, &val);
+  int16_t val2 = 1;
+  dbus_message_iter_append_basic(iter, DBUS_TYPE_INT16, &val2);
+}
+
+void get_and_print_base(DBusMessageIter *iter, int sig) {
+  switch (sig) {
+  case DBUS_TYPE_STRING: {
+    char *string;
+    dbus_message_iter_get_basic(iter, &string);
+    printf("String: %s\n", string);
+    break;
+  }
+  case DBUS_TYPE_INT16: {
+    int16_t val;
+    dbus_message_iter_get_basic(iter, &val);
+    printf("Int16: %d\n", val);
+    break;
+  }
+  }
 }
 
 void print_iter(DBusMessageIter *iter) {
@@ -30,10 +52,8 @@ void print_iter(DBusMessageIter *iter) {
     printf("TYPE: %c\n", current_type);
 
     switch (current_type) {
-    case DBUS_TYPE_STRING: {
-      char *string;
-      dbus_message_iter_get_basic(iter, &string);
-      printf("String: %s\n", string);
+    default: {
+      get_and_print_base(iter, current_type);
       break;
     }
     case DBUS_TYPE_ARRAY: {
