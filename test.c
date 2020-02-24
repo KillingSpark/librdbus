@@ -19,17 +19,28 @@ void make_msg(DBusMessageIter *iter) {
   dbus_message_iter_close_container(iter, &sub);
 }
 
+void print_iter(DBusMessageIter *iter) {
+  int current_type = 0;
+  while ((current_type = dbus_message_iter_get_arg_type(iter)) !=
+         DBUS_TYPE_INVALID) {
+    printf("TYPE: %c\n", current_type);
+    int element_type = dbus_message_iter_get_element_type(iter);
+    if (element_type) {
+      printf("ELEMENT_TYPE: %c\n", element_type);
+      DBusMessageIter sub_iter;
+      dbus_message_iter_recurse(iter, &sub_iter);
+      print_iter(&sub_iter);
+    }
+    dbus_message_iter_next(iter);
+  }
+}
+
 void print_msg(DBusMessage *msg) {
   DBusMessageIter iter;
   dbus_message_iter_init(msg, &iter);
 
   printf("Start printing message\n");
-  int current_type = 0;
-  while ((current_type = dbus_message_iter_get_arg_type(&iter)) !=
-         DBUS_TYPE_INVALID) {
-    printf("TYPE: %c\n", current_type);
-    dbus_message_iter_next(&iter);
-  }
+  print_iter(&iter);
   printf("End printing message\n");
 }
 

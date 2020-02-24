@@ -26,7 +26,8 @@ DBusConnection *dbus_bus_get(DBusBusType bus, DBusError *err);
 
 void dbus_connection_close(DBusConnection *con);
 
-uint32_t dbus_connection_send(DBusConnection *con, DBusMessage *msg, uint32_t *serial);
+uint32_t dbus_connection_send(DBusConnection *con, DBusMessage *msg,
+                              uint32_t *serial);
 
 uint32_t dbus_connection_send_hello(DBusConnection *con, uint32_t *serial);
 
@@ -96,6 +97,8 @@ DBusMessage *dbus_message_new_signal(const char *object, const char *interface,
                                      const char *member);
 
 DBusMessage *dbus_message_ref(DBusMessage *msg);
+
+void dbus_message_iter_recurse(DBusMessageIter *, DBusMessageIter *);
 
 uint32_t dbus_message_set_reply_serial(DBusMessage *msg, uint32_t reply_serial);
 

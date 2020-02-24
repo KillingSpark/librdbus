@@ -11,7 +11,14 @@ enum MessageIterInternal {
     // pushes contents into parent when closed
     SubAppendIter(SubAppendIter),
     MainIter(*const crate::DBusMessage),
-    SubIter(*const rustbus::message::Container),
+    StructIter(*const Vec<rustbus::message::Param>),
+    DictIter(*const rustbus::message::Dict),
+    ArrayIter(*const rustbus::message::Array),
+    VariantIter(*const rustbus::message::Variant),
+    DictEntryIter(
+        *const rustbus::message::Base,
+        *const rustbus::message::Param,
+    ),
 }
 
 #[repr(C)]
@@ -29,6 +36,7 @@ enum RustbusTypeOrDictEntry {
 #[derive(Debug)]
 enum RustbusParamOrDictEntry<'a> {
     Rustbus(&'a rustbus::message::Param),
+    RustbusBase(&'a rustbus::message::Base),
     DictEntry(&'a rustbus::message::Base, &'a rustbus::message::Param),
 }
 
@@ -84,34 +92,47 @@ impl DBusMessageIter {
         std::mem::drop(unsafe { Box::from_raw(self.inner) });
     }
 
-    fn has_next(&self) -> bool {
+    fn len(&self) -> usize {
         let inner = unsafe { &mut *self.inner };
         match inner {
-            MessageIterInternal::MainAppendIter(_) => false,
-            MessageIterInternal::SubAppendIter(_) => false,
+            MessageIterInternal::MainAppendIter(_) => 0,
+            MessageIterInternal::SubAppendIter(_) => 0,
             MessageIterInternal::MainIter(msg) => {
                 let msg = unsafe { &**msg };
-                if self.counter < msg.msg.params.len() {
-                    true
-                } else {
-                    false
-                }
+                msg.msg.params.len()
             }
-            MessageIterInternal::SubIter(params) => {
-                let params = unsafe { &**params };
-                let len = match params {
-                    rustbus::message::Container::Array(arr) => arr.values.len(),
-                    rustbus::message::Container::Struct(values) => values.len(),
-                    rustbus::message::Container::Dict(dict) => dict.map.len(),
-                    rustbus::message::Container::Variant(_) => 1,
-                };
-                if self.counter < len {
-                    true
-                } else {
-                    false
-                }
+            MessageIterInternal::ArrayIter(arr) => {
+                let arr = unsafe { &**arr };
+                arr.values.len()
+            }
+            MessageIterInternal::DictIter(dict) => {
+                let dict = unsafe { &**dict };
+                dict.map.len()
+            }
+            MessageIterInternal::VariantIter(_) => {
+                1
+            }
+            MessageIterInternal::DictEntryIter(_, _) => {
+                2
+            }
+            MessageIterInternal::StructIter(values) => {
+                let values = unsafe { &**values };
+                values.len()
             }
         }
+    }
+
+    fn has_next(&self) -> bool {
+        let len = self.len();
+        if len == 0 {
+            false
+        } else{
+            self.counter < len - 1
+        }
+    }
+    fn finished(&self) -> bool {
+        let len = self.len();
+        self.counter >= len
     }
 
     fn current(&self) -> Option<RustbusParamOrDictEntry<'_>> {
@@ -129,42 +150,49 @@ impl DBusMessageIter {
                     None
                 }
             }
-            MessageIterInternal::SubIter(params) => {
-                let params = unsafe { &**params };
-                let len = match params {
-                    rustbus::message::Container::Array(arr) => arr.values.len(),
-                    rustbus::message::Container::Struct(values) => values.len(),
-                    rustbus::message::Container::Dict(dict) => dict.map.len(),
-                    rustbus::message::Container::Variant(_) => 1,
-                };
-                if self.counter < len {
-                    match params {
-                        rustbus::message::Container::Array(arr) => {
-                            Some(RustbusParamOrDictEntry::Rustbus(&arr.values[self.counter]))
-                        }
-                        rustbus::message::Container::Struct(values) => {
-                            Some(RustbusParamOrDictEntry::Rustbus(&values[self.counter]))
-                        }
-                        rustbus::message::Container::Dict(dict) => {
-                            let key = dict.map.keys().nth(self.counter).unwrap();
-                            let val = dict.map.get(key).unwrap();
-                            Some(RustbusParamOrDictEntry::DictEntry(key, val))
-                        }
-                        rustbus::message::Container::Variant(var) => {
-                            Some(RustbusParamOrDictEntry::Rustbus(&var.value))
-                        }
-                    }
+            MessageIterInternal::ArrayIter(arr) => {
+                let arr = unsafe { &**arr };
+                Some(RustbusParamOrDictEntry::Rustbus(&arr.values[self.counter]))
+            }
+            MessageIterInternal::DictIter(dict) => {
+                let dict = unsafe { &**dict };
+                let key = dict.map.keys().nth(self.counter).unwrap();
+                let val = dict.map.get(key).unwrap();
+                Some(RustbusParamOrDictEntry::DictEntry(key, val))
+            }
+            MessageIterInternal::VariantIter(var) => {
+                let var = unsafe { &**var };
+                Some(RustbusParamOrDictEntry::Rustbus(&var.value))
+            }
+            MessageIterInternal::DictEntryIter(key, val) => {
+                if self.counter == 0 {
+                    let key = unsafe { &**key };
+                    Some(RustbusParamOrDictEntry::RustbusBase(key))
+                } else if self.counter == 1 {
+                    let val = unsafe { &**val };
+                    Some(RustbusParamOrDictEntry::Rustbus(val))
                 } else {
                     None
                 }
+            }
+            MessageIterInternal::StructIter(values) => {
+                let values = unsafe { &**values };
+                Some(RustbusParamOrDictEntry::Rustbus(&values[self.counter]))
             }
         }
     }
 
     fn current_type(&self) -> Option<RustbusTypeOrDictEntry> {
-        let current = self.current(); 
+        if self.finished() {
+            return None;
+        }
+        
+        let current = self.current();
         match current {
             Some(RustbusParamOrDictEntry::Rustbus(p)) => {
+                Some(RustbusTypeOrDictEntry::Rustbus(p.sig()))
+            }
+            Some(RustbusParamOrDictEntry::RustbusBase(p)) => {
                 Some(RustbusTypeOrDictEntry::Rustbus(p.sig()))
             }
             Some(RustbusParamOrDictEntry::DictEntry(k, v)) => {
@@ -324,8 +352,8 @@ pub extern "C" fn dbus_message_iter_next(args: *mut DBusMessageIter) -> u32 {
         return 0;
     }
     let args = unsafe { &mut *args };
-    if args.has_next() {
-        args.counter += 1;
+    args.counter += 1;
+    if !args.finished() {
         1
     } else {
         0
@@ -361,5 +389,54 @@ pub extern "C" fn dbus_message_iter_get_element_type(args: *mut DBusMessageIter)
         }
     } else {
         0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_recurse(
+    parent: *mut DBusMessageIter,
+    sub: *mut DBusMessageIter,
+) {
+    if parent.is_null() {
+        return;
+    }
+    let parent = unsafe { &*parent };
+    if sub.is_null() {
+        return;
+    }
+    let sub = unsafe { &mut *sub };
+
+    let current = parent.current();
+
+    let iter = match current {
+        Some(RustbusParamOrDictEntry::DictEntry(key, value)) => {
+            MessageIterInternal::DictEntryIter(key, value)
+        }
+        Some(RustbusParamOrDictEntry::Rustbus(param)) => match param {
+            rustbus::message::Param::Container(rustbus::message::Container::Array(arr)) => {
+                MessageIterInternal::ArrayIter(arr)
+            }
+            rustbus::message::Param::Container(rustbus::message::Container::Dict(dict)) => {
+                MessageIterInternal::DictIter(dict)
+            }
+            rustbus::message::Param::Container(rustbus::message::Container::Struct(values)) => {
+                MessageIterInternal::StructIter(values)
+            }
+            rustbus::message::Param::Container(rustbus::message::Container::Variant(var)) => {
+                MessageIterInternal::VariantIter(var.as_ref())
+            }
+            rustbus::message::Param::Base(_) => return,
+        },
+        Some(RustbusParamOrDictEntry::RustbusBase(_param)) => {
+            return;
+        }
+        None => {
+            return;
+        }
+    };
+
+    *sub = DBusMessageIter {
+        inner: Box::into_raw(Box::new(iter)),
+        counter: 0,
     }
 }
