@@ -20,6 +20,15 @@ pub struct DBusMessageIter {
     counter: usize,
 }
 
+enum RustbusTypeOrDictEntry {
+    Rustbus(rustbus::signature::Type),
+    DictEntry(rustbus::signature::Base, rustbus::signature::Type),
+}
+enum RustbusParamOrDictEntry<'a> {
+    Rustbus(&'a rustbus::message::Param),
+    DictEntry(&'a rustbus::message::Base, &'a rustbus::message::Param),
+}
+
 impl DBusMessageIter {
     fn append(&mut self, param: rustbus::message::Param) {
         let inner = unsafe { &mut *self.inner };
@@ -99,6 +108,92 @@ impl DBusMessageIter {
                     false
                 }
             }
+        }
+    }
+
+    fn current(&self) -> Option<RustbusParamOrDictEntry<'_>> {
+        let inner = unsafe { &mut *self.inner };
+        match inner {
+            MessageIterInternal::MainAppendIter(_) => None,
+            MessageIterInternal::SubAppendIter(_) => None,
+            MessageIterInternal::MainIter(msg) => {
+                let msg = unsafe { &**msg };
+                if self.counter < msg.msg.params.len() {
+                    Some(RustbusParamOrDictEntry::Rustbus(
+                        &msg.msg.params[self.counter],
+                    ))
+                } else {
+                    None
+                }
+            }
+            MessageIterInternal::SubIter(params) => {
+                let params = unsafe { &**params };
+                let len = match params {
+                    rustbus::message::Container::Array(arr) => arr.values.len(),
+                    rustbus::message::Container::Struct(values) => values.len(),
+                    rustbus::message::Container::Dict(dict) => dict.map.len(),
+                    rustbus::message::Container::Variant(_) => 1,
+                };
+                if self.counter < len {
+                    match params {
+                        rustbus::message::Container::Array(arr) => {
+                            Some(RustbusParamOrDictEntry::Rustbus(&arr.values[self.counter]))
+                        }
+                        rustbus::message::Container::Struct(values) => {
+                            Some(RustbusParamOrDictEntry::Rustbus(&values[self.counter]))
+                        }
+                        rustbus::message::Container::Dict(dict) => {
+                            let key = dict.map.keys().nth(self.counter).unwrap();
+                            let val = dict.map.get(key).unwrap();
+                            Some(RustbusParamOrDictEntry::DictEntry(key, val))
+                        }
+                        rustbus::message::Container::Variant(var) => {
+                            Some(RustbusParamOrDictEntry::Rustbus(&var.value))
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn current_type(&self) -> Option<RustbusTypeOrDictEntry> {
+        match self.current() {
+            Some(RustbusParamOrDictEntry::Rustbus(p)) => {
+                Some(RustbusTypeOrDictEntry::Rustbus(p.sig()))
+            }
+            Some(RustbusParamOrDictEntry::DictEntry(k, v)) => {
+                if let rustbus::signature::Type::Base(b) = k.sig() {
+                    Some(RustbusTypeOrDictEntry::DictEntry(b, v.sig()))
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+
+    fn current_element_type(&self) -> Option<RustbusTypeOrDictEntry> {
+        if let Some(x) = self.current_type() {
+            match x {
+                RustbusTypeOrDictEntry::Rustbus(t) => match t {
+                    rustbus::signature::Type::Container(rustbus::signature::Container::Array(
+                        sig,
+                    )) => Some(RustbusTypeOrDictEntry::Rustbus(sig.as_ref().clone())),
+                    rustbus::signature::Type::Container(rustbus::signature::Container::Dict(
+                        key_sig,
+                        val_sig,
+                    )) => Some(RustbusTypeOrDictEntry::DictEntry(
+                        key_sig.clone(),
+                        val_sig.as_ref().clone(),
+                    )),
+                    _ => None,
+                },
+                RustbusTypeOrDictEntry::DictEntry(_, _) => None,
+            }
+        } else {
+            None
         }
     }
 }
@@ -231,6 +326,38 @@ pub extern "C" fn dbus_message_iter_next(args: *mut DBusMessageIter) -> u32 {
     if args.has_next() {
         args.counter += 1;
         1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_get_arg_type(args: *mut DBusMessageIter) -> libc::c_int {
+    if args.is_null() {
+        return 0;
+    }
+    let args = unsafe { &mut *args };
+    if let Some(t) = args.current_type() {
+        match t {
+            RustbusTypeOrDictEntry::Rustbus(t) => crate::rustbus_to_c_type(&t),
+            RustbusTypeOrDictEntry::DictEntry(_, _) => crate::DBUS_TYPE_DICTENTRY,
+        }
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_get_element_type(args: *mut DBusMessageIter) -> libc::c_int {
+    if args.is_null() {
+        return 0;
+    }
+    let args = unsafe { &mut *args };
+    if let Some(t) = args.current_element_type() {
+        match t {
+            RustbusTypeOrDictEntry::Rustbus(t) => crate::rustbus_to_c_type(&t),
+            RustbusTypeOrDictEntry::DictEntry(_, _) => crate::DBUS_TYPE_DICTENTRY,
+        }
     } else {
         0
     }

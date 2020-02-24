@@ -297,7 +297,7 @@ pub extern "C" fn dbus_message_contains_unix_fds(msg: *mut DBusMessage) -> u32 {
     }
 }
 
-fn c_to_rustbus_base_type(ctype: libc::c_int) -> Option<rustbus::signature::Base> {
+pub fn c_to_rustbus_base_type(ctype: libc::c_int) -> Option<rustbus::signature::Base> {
     match ctype {
         crate::DBUS_TYPE_BOOLEAN => Some(rustbus::signature::Base::Boolean),
         crate::DBUS_TYPE_BYTE => Some(rustbus::signature::Base::Byte),
@@ -316,6 +316,37 @@ fn c_to_rustbus_base_type(ctype: libc::c_int) -> Option<rustbus::signature::Base
     }
 }
 
+pub fn rustbus_to_c_base_type(rtype: &rustbus::signature::Base) -> libc::c_int {
+    match rtype {
+        rustbus::signature::Base::Boolean => crate::DBUS_TYPE_BOOLEAN,
+        rustbus::signature::Base::Byte => crate::DBUS_TYPE_BYTE,
+        rustbus::signature::Base::Int16 => crate::DBUS_TYPE_INT16,
+        rustbus::signature::Base::Uint16 => crate::DBUS_TYPE_UINT16,
+        rustbus::signature::Base::Int32 => crate::DBUS_TYPE_INT32,
+        rustbus::signature::Base::Uint32 => crate::DBUS_TYPE_UINT32,
+        rustbus::signature::Base::Int64 => crate::DBUS_TYPE_INT64,
+        rustbus::signature::Base::Uint64 => crate::DBUS_TYPE_UINT64,
+        rustbus::signature::Base::Double => crate::DBUS_TYPE_DOUBLE,
+        rustbus::signature::Base::UnixFd => crate::DBUS_TYPE_UNIXFD,
+        rustbus::signature::Base::String => crate::DBUS_TYPE_STRING,
+        rustbus::signature::Base::ObjectPath => crate::DBUS_TYPE_OBJECTPATH,
+        rustbus::signature::Base::Signature => crate::DBUS_TYPE_SIGNATURE,
+    }
+}
+pub fn rustbus_to_c_container_type(rtype: &rustbus::signature::Container) -> libc::c_int {
+    match rtype {
+        rustbus::signature::Container::Array(_) => crate::DBUS_TYPE_ARRAY,
+        rustbus::signature::Container::Dict(_,_) => crate::DBUS_TYPE_ARRAY,
+        rustbus::signature::Container::Struct(_) => crate::DBUS_TYPE_STRUCT,
+        rustbus::signature::Container::Variant => crate::DBUS_TYPE_VARIANT,
+    }
+}
+pub fn rustbus_to_c_type(rtype: &rustbus::signature::Type) -> libc::c_int {
+    match rtype{
+        rustbus::signature::Type::Base(b) => rustbus_to_c_base_type(b),
+        rustbus::signature::Type::Container(c) => rustbus_to_c_container_type(c),
+    }
+}
 #[no_mangle]
 pub extern "C" fn dbus_message_get_args(msg: *mut DBusMessage, typ1: libc::c_int) -> u32 {
     if msg.is_null() {

@@ -7,6 +7,7 @@
 char *text = "THIS IS A STRING FROM C";
 
 void make_msg(DBusMessageIter *iter) {
+  
   DBusMessageIter sub;
   dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "s", &sub);
   for (int i = 0; i < 2; i++) {
