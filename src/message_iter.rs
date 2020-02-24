@@ -546,3 +546,27 @@ pub extern "C" fn dbus_message_iter_get_basic(
         crate::write_base_param(base_param, arg);
     }
 }
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_get_element_count(
+    sub: *mut DBusMessageIter,
+) -> libc::c_int {
+    if sub.is_null() {
+        return 0;
+    }
+    let sub = unsafe { &mut *sub };
+
+    sub.len() as libc::c_int
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_get_fixed_array(
+    _sub: *mut DBusMessageIter,
+    _output: *mut std::ffi::c_void,
+) {
+    unimplemented!();
+    // If this is really needed we need to somehow allocate memory since 
+    // we cant just point into our message struct.
+    // One possibility would be to pass down a ref to the Message and
+    // allocate it there. This would be suboptimal but would allow deallocation when the message gets
+    // cleared
+
+}
