@@ -7,7 +7,7 @@
 char *text = "THIS IS A STRING FROM C";
 
 void make_msg(DBusMessageIter *iter) {
-  
+
   DBusMessageIter sub;
   dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "s", &sub);
   for (int i = 0; i < 2; i++) {
@@ -19,12 +19,28 @@ void make_msg(DBusMessageIter *iter) {
   dbus_message_iter_close_container(iter, &sub);
 }
 
+void print_msg(DBusMessage *msg) {
+  DBusMessageIter iter;
+  dbus_message_iter_init(msg, &iter);
+
+  printf("Start printing message\n");
+  int current_type = 0;
+  while ((current_type = dbus_message_iter_get_arg_type(&iter)) !=
+         DBUS_TYPE_INVALID) {
+    printf("TYPE: %c\n", current_type);
+    dbus_message_iter_next(&iter);
+  }
+  printf("End printing message\n");
+}
+
 int main(void) {
   DBusError error;
   dbus_error_init(&error);
 
   void *con = dbus_bus_get(DBUS_BUS_SESSION, &error);
-  dbus_connection_send_hello(con, &error);
+
+  uint32_t serial = 0;
+  dbus_connection_send_hello(con, &serial);
   DBusMessage *sig = dbus_message_new_signal(
       "/test/signal/Object", // object name of the signal
       "test.signal.Type",    // interface name of the signal
@@ -34,6 +50,7 @@ int main(void) {
   dbus_message_iter_init_append(sig, &args);
   make_msg(&args);
 
-  uint32_t serial = 0;
+  print_msg(sig);
+
   dbus_connection_send(con, sig, &serial);
 }

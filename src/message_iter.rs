@@ -20,10 +20,13 @@ pub struct DBusMessageIter {
     counter: usize,
 }
 
+#[derive(Debug)]
 enum RustbusTypeOrDictEntry {
     Rustbus(rustbus::signature::Type),
     DictEntry(rustbus::signature::Base, rustbus::signature::Type),
 }
+
+#[derive(Debug)]
 enum RustbusParamOrDictEntry<'a> {
     Rustbus(&'a rustbus::message::Param),
     DictEntry(&'a rustbus::message::Base, &'a rustbus::message::Param),
@@ -159,7 +162,8 @@ impl DBusMessageIter {
     }
 
     fn current_type(&self) -> Option<RustbusTypeOrDictEntry> {
-        match self.current() {
+        let current = self.current(); 
+        match current {
             Some(RustbusParamOrDictEntry::Rustbus(p)) => {
                 Some(RustbusTypeOrDictEntry::Rustbus(p.sig()))
             }
@@ -296,10 +300,7 @@ pub extern "C" fn dbus_message_iter_init(
     let args = unsafe { &mut *args };
     *args = DBusMessageIter {
         inner: Box::into_raw(Box::new(MessageIterInternal::MainIter(msg))),
-        counter: {
-            let msg = unsafe { &*msg };
-            msg.msg.params.len()
-        },
+        counter: 0,
     };
     1
 }
