@@ -9,6 +9,7 @@ mod tests {
 mod message;
 mod message_iter;
 use message::*;
+use rustbus::params;
 use std::ffi::CStr;
 
 use libc;
@@ -40,7 +41,7 @@ pub const DBUS_TYPE_VARIANT: libc::c_int = b'v' as libc::c_int;
 pub const DBUS_TYPE_STRUCT: libc::c_int = b'r' as libc::c_int;
 pub const DBUS_TYPE_DICTENTRY: libc::c_int = b'e' as libc::c_int;
 
-type DBusConnection = rustbus::client_conn::RpcConn;
+type DBusConnection<'a> = rustbus::client_conn::RpcConn<'a, 'a>;
 
 #[repr(C)]
 pub struct DBusError {
@@ -70,7 +71,10 @@ pub extern "C" fn dbus_error_is_set(err: *mut DBusError) -> libc::c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_bus_get(bus: DBusBusType, err: *mut DBusError) -> *mut DBusConnection {
+pub extern "C" fn dbus_bus_get<'a>(
+    bus: DBusBusType,
+    err: *mut DBusError,
+) -> *mut DBusConnection<'a> {
     let path = match bus {
         DBusBusType::DBUS_BUS_SESSION => rustbus::get_session_bus_path(),
         DBusBusType::DBUS_BUS_SYSTEM => rustbus::get_system_bus_path(),
@@ -102,16 +106,19 @@ pub extern "C" fn dbus_bus_get(bus: DBusBusType, err: *mut DBusError) -> *mut DB
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_connection_send_hello(con: *mut DBusConnection, serial: *mut u32) -> u32 {
+pub extern "C" fn dbus_connection_send_hello<'a>(
+    con: *mut DBusConnection<'a>,
+    serial: *mut u32,
+) -> u32 {
     if con.is_null() {
         return 0;
     }
     let con = unsafe { &mut *con };
-    match con.send_message(rustbus::standard_messages::hello(), None) {
-        Ok(msg) => {
+    match con.send_message(&mut rustbus::standard_messages::hello(), None) {
+        Ok(sent_serial) => {
             if !serial.is_null() {
                 let serial = unsafe { &mut *serial };
-                *serial = msg.serial.unwrap();
+                *serial = sent_serial;
             }
             1
         }
@@ -120,9 +127,9 @@ pub extern "C" fn dbus_connection_send_hello(con: *mut DBusConnection, serial: *
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_connection_send(
-    con: *mut DBusConnection,
-    msg: *mut DBusMessage,
+pub extern "C" fn dbus_connection_send<'a>(
+    con: *mut DBusConnection<'a>,
+    msg: *mut DBusMessage<'a>,
     serial: *mut u32,
 ) -> u32 {
     if con.is_null() {
@@ -133,14 +140,14 @@ pub extern "C" fn dbus_connection_send(
     }
     let con = unsafe { &mut *con };
     let msg = unsafe { &mut *msg };
-    let msg = msg.msg.clone();
-    let r = con.send_message(msg, None);
+    let mut msg = msg.msg.clone();
+    let r = con.send_message(&mut msg, None);
 
     match r {
-        Ok(msg) => {
+        Ok(sent_serial) => {
             if !serial.is_null() {
                 let serial = unsafe { &mut *serial };
-                *serial = msg.serial.unwrap();
+                *serial = sent_serial;
             }
             1
         }
@@ -159,11 +166,11 @@ pub extern "C" fn dbus_connection_close(con: *mut DBusConnection) {
     }
 }
 
-pub fn param_from_parts(
+pub fn param_from_parts<'a>(
     argtyp: libc::c_int,
     arg: *mut std::ffi::c_void,
-) -> Option<rustbus::message::Param> {
-    let param: rustbus::message::Param = match argtyp {
+) -> Option<params::Param<'a, 'a>> {
+    let param: params::Param = match argtyp {
         DBUS_TYPE_STRING => {
             let c_str = unsafe {
                 assert!(!arg.is_null());
@@ -184,7 +191,7 @@ pub fn param_from_parts(
                 CStr::from_ptr(arg)
             };
             let arg = c_str.to_str().unwrap().to_owned();
-            rustbus::message::Base::ObjectPath(arg).into()
+            params::Base::ObjectPath(arg).into()
         }
         DBUS_TYPE_SIGNATURE => {
             let c_str = unsafe {
@@ -195,144 +202,214 @@ pub fn param_from_parts(
                 CStr::from_ptr(arg)
             };
             let arg = c_str.to_str().unwrap().to_owned();
-            rustbus::message::Base::ObjectPath(arg).into()
+            params::Base::ObjectPath(arg).into()
         }
         DBUS_TYPE_INT16 => {
             assert!(!arg.is_null());
             let ptr: *const i16 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Int16(val).into()
+            params::Base::Int16(val).into()
         }
         DBUS_TYPE_UINT16 => {
             assert!(!arg.is_null());
             let ptr: *const u16 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Uint16(val).into()
+            params::Base::Uint16(val).into()
         }
         DBUS_TYPE_INT32 => {
             assert!(!arg.is_null());
             let ptr: *const i32 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Int32(val).into()
+            params::Base::Int32(val).into()
         }
         DBUS_TYPE_UINT32 => {
             assert!(!arg.is_null());
             let ptr: *const u32 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Uint32(val).into()
+            params::Base::Uint32(val).into()
         }
         DBUS_TYPE_INT64 => {
             assert!(!arg.is_null());
             let ptr: *const i64 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Int64(val).into()
+            params::Base::Int64(val).into()
         }
         DBUS_TYPE_UINT64 => {
             assert!(!arg.is_null());
             let ptr: *const u64 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Uint64(val).into()
+            params::Base::Uint64(val).into()
         }
         DBUS_TYPE_BOOLEAN => {
             assert!(!arg.is_null());
             let ptr: *const u32 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Boolean(val != 0).into()
+            params::Base::Boolean(val != 0).into()
         }
         DBUS_TYPE_BYTE => {
             assert!(!arg.is_null());
             let ptr: *const u8 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Byte(val).into()
+            params::Base::Byte(val).into()
         }
         DBUS_TYPE_DOUBLE => {
             assert!(!arg.is_null());
             let ptr: *const u64 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::Double(val).into()
+            params::Base::Double(val).into()
         }
         DBUS_TYPE_UNIXFD => {
             assert!(!arg.is_null());
             let ptr: *const u32 = unsafe { std::mem::transmute(arg) };
             let val = unsafe { ptr.read() };
-            rustbus::message::Base::UnixFd(val).into()
+            params::Base::UnixFd(val).into()
         }
         _ => return None,
     };
     Some(param)
 }
 
-pub fn write_base_param(
-    param: &rustbus::message::Base,
+pub fn write_base_param<'a>(
+    param: &params::Base<'a>,
     string_arena: &mut crate::StringArena,
     arg: *mut std::ffi::c_void,
 ) {
     match param {
-        rustbus::message::Base::Boolean(val) => {
+        params::Base::Boolean(val) => {
             assert!(!arg.is_null());
             let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
             *mutref = if *val { 1 } else { 0 };
         }
-        rustbus::message::Base::Byte(val) => {
+        params::Base::Byte(val) => {
             assert!(!arg.is_null());
             let mutref: &mut u8 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::Int16(val) => {
+        params::Base::Int16(val) => {
             assert!(!arg.is_null());
             let mutref: &mut i16 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::Uint16(val) => {
+        params::Base::Uint16(val) => {
             assert!(!arg.is_null());
             let mutref: &mut u16 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::Int32(val) => {
+        params::Base::Int32(val) => {
             assert!(!arg.is_null());
             let mutref: &mut i32 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::Uint32(val) => {
+        params::Base::Uint32(val) => {
             assert!(!arg.is_null());
             let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::Int64(val) => {
+        params::Base::Int64(val) => {
             assert!(!arg.is_null());
             let mutref: &mut i64 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::Uint64(val) => {
+        params::Base::Uint64(val) => {
             assert!(!arg.is_null());
             let mutref: &mut u64 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::Double(val) => {
+        params::Base::Double(val) => {
             assert!(!arg.is_null());
             let mutref: &mut u64 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
-        rustbus::message::Base::UnixFd(val) => {
+        params::Base::UnixFd(val) => {
             assert!(!arg.is_null());
             let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
 
-        rustbus::message::Base::String(val) => {
+        params::Base::String(val) => {
             assert!(!arg.is_null());
             let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
 
             let cstr = crate::get_cstring(string_arena, &val);
             *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
         }
-        rustbus::message::Base::ObjectPath(val) => {
+        params::Base::ObjectPath(val) => {
             assert!(!arg.is_null());
             let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
             let cstr = crate::get_cstring(string_arena, &val);
             *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
         }
-        rustbus::message::Base::Signature(val) => {
+        params::Base::Signature(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
+            let cstr = crate::get_cstring(string_arena, &val);
+            *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
+        }
+        params::Base::BooleanRef(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
+            *mutref = if **val { 1 } else { 0 };
+        }
+        params::Base::ByteRef(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u8 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::Int16Ref(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut i16 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::Uint16Ref(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u16 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::Int32Ref(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut i32 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::Uint32Ref(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::Int64Ref(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut i64 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::Uint64Ref(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u64 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::DoubleRef(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u64 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+        params::Base::UnixFdRef(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
+            *mutref = **val;
+        }
+
+        params::Base::StringRef(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
+
+            let cstr = crate::get_cstring(string_arena, &val);
+            *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
+        }
+        params::Base::ObjectPathRef(val) => {
+            assert!(!arg.is_null());
+            let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
+            let cstr = crate::get_cstring(string_arena, &val);
+            *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
+        }
+        params::Base::SignatureRef(val) => {
             assert!(!arg.is_null());
             let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
             let cstr = crate::get_cstring(string_arena, &val);

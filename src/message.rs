@@ -1,3 +1,4 @@
+use rustbus::params;
 use std::ffi::CStr;
 
 pub const DBUS_MESSAGE_TYPE_INVALID: libc::c_int = 0;
@@ -19,14 +20,14 @@ pub fn get_cstring<'a>(arena: &'a mut StringArena, string: &str) -> &'a std::ffi
 }
 
 #[derive(Clone)]
-pub struct DBusMessage {
-    pub msg: rustbus::Message,
+pub struct DBusMessage<'a> {
+    pub msg: rustbus::Message<'a, 'a>,
     refcount: u64,
     pub string_arena: StringArena,
 }
 
-impl DBusMessage {
-    pub fn new(msg: rustbus::Message) -> Self {
+impl<'a> DBusMessage<'a> {
+    pub fn new(msg: rustbus::Message<'a, 'a>) -> Self {
         Self {
             msg,
             refcount: 0,
@@ -81,7 +82,7 @@ pub extern "C" fn dbus_message_get_sender(msg: *const DBusMessage) -> *const lib
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_new(typ: libc::c_int) -> *mut DBusMessage {
+pub extern "C" fn dbus_message_new<'a>(typ: libc::c_int) -> *mut DBusMessage<'a> {
     let mut msg = rustbus::Message::new();
     match typ {
         DBUS_MESSAGE_TYPE_ERROR => msg.typ = rustbus::message::MessageType::Error,
@@ -95,12 +96,12 @@ pub extern "C" fn dbus_message_new(typ: libc::c_int) -> *mut DBusMessage {
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_new_method_call(
+pub extern "C" fn dbus_message_new_method_call<'a>(
     dest: *const libc::c_char,
     object: *const libc::c_char,
     interface: *const libc::c_char,
     member: *const libc::c_char,
-) -> *mut DBusMessage {
+) -> *mut DBusMessage<'a> {
     let c_str = unsafe {
         assert!(!dest.is_null());
 
@@ -139,11 +140,11 @@ pub extern "C" fn dbus_message_new_method_call(
     )))
 }
 #[no_mangle]
-pub extern "C" fn dbus_message_new_signal(
+pub extern "C" fn dbus_message_new_signal<'a>(
     object: *const libc::c_char,
     interface: *const libc::c_char,
     member: *const libc::c_char,
-) -> *mut DBusMessage {
+) -> *mut DBusMessage<'a> {
     let c_str = unsafe {
         assert!(!object.is_null());
 
@@ -181,11 +182,11 @@ pub extern "C" fn dbus_message_new_method_return(call: *const DBusMessage) -> *m
     }
 }
 #[no_mangle]
-pub extern "C" fn dbus_message_new_error(
-    call: *const DBusMessage,
+pub extern "C" fn dbus_message_new_error<'a>(
+    call: *const DBusMessage<'a>,
     errname: *const libc::c_char,
     errmsg: *const libc::c_char,
-) -> *mut DBusMessage {
+) -> *mut DBusMessage<'a> {
     if call.is_null() {
         std::ptr::null_mut()
     } else {
@@ -200,8 +201,7 @@ pub extern "C" fn dbus_message_new_error(
             CStr::from_ptr(errmsg)
         };
         let errmsg = c_str.to_str().unwrap().to_owned();
-        let mut msg = call.msg.make_error_response(errname);
-        msg.push_params(vec![errmsg.into()]);
+        let msg = call.msg.make_error_response(errname, Some(errmsg));
         Box::into_raw(Box::new(DBusMessage::new(msg)))
     }
 }
@@ -365,7 +365,7 @@ pub fn rustbus_to_c_type(rtype: &rustbus::signature::Type) -> libc::c_int {
     }
 }
 #[no_mangle]
-pub extern "C" fn dbus_message_get_args(msg: *mut DBusMessage, typ1: libc::c_int) -> u32 {
+pub extern "C" fn dbus_message_get_args<'a>(msg: *mut DBusMessage<'a>, typ1: libc::c_int) -> u32 {
     if msg.is_null() {
         0
     } else {
@@ -389,7 +389,7 @@ pub extern "C" fn dbus_message_get_args(msg: *mut DBusMessage, typ1: libc::c_int
             if let Some(base_type) = c_to_rustbus_base_type(typ) {
                 let param = &msg.msg.params[counter];
                 if rustbus::signature::Type::Base(base_type) == param.sig() {
-                    if let rustbus::message::Param::Base(base_param) = param {
+                    if let params::Param::Base(base_param) = param {
                         crate::write_base_param(base_param, &mut msg.string_arena, unsafe {
                             arg_ptr.read()
                         });
@@ -415,14 +415,13 @@ pub extern "C" fn dbus_message_get_args(msg: *mut DBusMessage, typ1: libc::c_int
 
                 if let Some(base_type) = c_to_rustbus_base_type(element_type) {
                     let array_size = unsafe { array_size_ptr.read() };
-                    if let rustbus::message::Param::Container(rustbus::message::Container::Array(
-                        array_param,
-                    )) = &msg.msg.params[counter]
+                    if let params::Param::Container(params::Container::Array(array_param)) =
+                        &msg.msg.params[counter]
                     {
                         for idx in 0..u32::min(array_size, array_param.values.len() as u32) {
                             let param = &array_param.values[idx as usize];
                             if rustbus::signature::Type::Base(base_type) == param.sig() {
-                                if let rustbus::message::Param::Base(base_param) = param {
+                                if let params::Param::Base(base_param) = param {
                                     crate::write_base_param(
                                         base_param,
                                         &mut msg.string_arena,

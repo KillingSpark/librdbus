@@ -1,31 +1,34 @@
+use rustbus::params;
+use rustbus::signature;
 use std::ffi::CStr;
 
-pub struct SubAppendIter {
-    params: Vec<rustbus::message::Param>,
+pub struct SubAppendIter<'a> {
+    params: Vec<params::Param<'a, 'a>>,
     typ: rustbus::signature::Container,
 }
 
-enum MessageIterInternal {
+enum MessageIterInternal<'a> {
     // pushes contents into message
-    MainAppendIter(*mut crate::DBusMessage),
+    MainAppendIter(*mut crate::DBusMessage<'a>),
     // pushes contents into parent when closed
-    SubAppendIter(SubAppendIter),
-    MainIter(*const crate::DBusMessage),
-    StructIter(*const Vec<rustbus::message::Param>),
-    DictIter(*const rustbus::message::Dict),
-    ArrayIter(*const rustbus::message::Array),
-    VariantIter(*const rustbus::message::Variant),
-    DictEntryIter(
-        *const rustbus::message::Base,
-        *const rustbus::message::Param,
+    SubAppendIter(SubAppendIter<'a>),
+    MainIter(*const crate::DBusMessage<'a>),
+    StructIter(*const [params::Param<'a, 'a>]),
+    DictIter(
+        *const params::DictMap<'a, 'a>,
+        *const signature::Base,
+        *const signature::Type,
     ),
+    ArrayIter(*const [params::Param<'a, 'a>], *const signature::Type),
+    VariantIter(*const params::Variant<'a, 'a>),
+    DictEntryIter(*const params::Base<'a>, *const params::Param<'a, 'a>),
 }
 
 #[repr(C)]
-pub struct DBusMessageIter {
-    inner: *mut MessageIterInternal,
+pub struct DBusMessageIter<'a> {
+    inner: *mut MessageIterInternal<'a>,
     counter: usize,
-    msg: *mut crate::DBusMessage,
+    msg: *mut crate::DBusMessage<'a>,
 }
 
 #[derive(Debug)]
@@ -36,13 +39,13 @@ enum RustbusTypeOrDictEntry {
 
 #[derive(Debug)]
 enum RustbusParamOrDictEntry<'a> {
-    Rustbus(&'a rustbus::message::Param),
-    RustbusBase(&'a rustbus::message::Base),
-    DictEntry(&'a rustbus::message::Base, &'a rustbus::message::Param),
+    Rustbus(&'a params::Param<'a, 'a>),
+    RustbusBase(&'a params::Base<'a>),
+    DictEntry(&'a params::Base<'a>, &'a params::Param<'a, 'a>),
 }
 
-impl DBusMessageIter {
-    fn append(&mut self, param: rustbus::message::Param) {
+impl<'a> DBusMessageIter<'a> {
+    fn append(&mut self, param: params::Param<'a, 'a>) {
         let inner = unsafe { &mut *self.inner };
         match inner {
             MessageIterInternal::MainAppendIter(msg) => {
@@ -60,7 +63,7 @@ impl DBusMessageIter {
         self.counter += 1;
     }
 
-    fn close(&mut self, parent: &mut DBusMessageIter) {
+    fn close(&mut self, parent: &mut DBusMessageIter<'a>) {
         if self.inner.is_null() {
             return;
         }
@@ -71,7 +74,7 @@ impl DBusMessageIter {
             }
             MessageIterInternal::SubAppendIter(sub) => match &sub.typ {
                 rustbus::signature::Container::Array(sig) => parent.append(
-                    rustbus::message::Container::Array(rustbus::message::Array {
+                    params::Container::Array(params::Array {
                         element_sig: sig.as_ref().clone(),
                         values: sub.params.clone(),
                     })
@@ -79,14 +82,14 @@ impl DBusMessageIter {
                 ),
                 rustbus::signature::Container::Dict(_, _) => unimplemented!(),
                 rustbus::signature::Container::Variant => parent.append(
-                    rustbus::message::Container::Variant(Box::new(rustbus::message::Variant {
+                    params::Container::Variant(Box::new(params::Variant {
                         sig: sub.params[0].sig(),
                         value: sub.params[0].clone(),
                     }))
                     .into(),
                 ),
                 rustbus::signature::Container::Struct(_sigs) => {
-                    parent.append(rustbus::message::Container::Struct(sub.params.clone()).into())
+                    parent.append(params::Container::Struct(sub.params.clone()).into())
                 }
             },
             _ => {
@@ -105,13 +108,13 @@ impl DBusMessageIter {
                 let msg = unsafe { &**msg };
                 msg.msg.params.len()
             }
-            MessageIterInternal::ArrayIter(arr) => {
+            MessageIterInternal::ArrayIter(arr, _) => {
                 let arr = unsafe { &**arr };
-                arr.values.len()
+                arr.len()
             }
-            MessageIterInternal::DictIter(dict) => {
+            MessageIterInternal::DictIter(dict, _, _) => {
                 let dict = unsafe { &**dict };
-                dict.map.len()
+                dict.len()
             }
             MessageIterInternal::VariantIter(_) => 1,
             MessageIterInternal::DictEntryIter(_, _) => 2,
@@ -150,14 +153,14 @@ impl DBusMessageIter {
                     None
                 }
             }
-            MessageIterInternal::ArrayIter(arr) => {
+            MessageIterInternal::ArrayIter(arr, _) => {
                 let arr = unsafe { &**arr };
-                Some(RustbusParamOrDictEntry::Rustbus(&arr.values[self.counter]))
+                Some(RustbusParamOrDictEntry::Rustbus(&arr[self.counter]))
             }
-            MessageIterInternal::DictIter(dict) => {
+            MessageIterInternal::DictIter(dict, _, _) => {
                 let dict = unsafe { &**dict };
-                let key = dict.map.keys().nth(self.counter).unwrap();
-                let val = dict.map.get(key).unwrap();
+                let key = dict.keys().nth(self.counter).unwrap();
+                let val = dict.get(key).unwrap();
                 Some(RustbusParamOrDictEntry::DictEntry(key, val))
             }
             MessageIterInternal::VariantIter(var) => {
@@ -195,20 +198,21 @@ impl DBusMessageIter {
                 }
                 Some(sigs)
             }
-            MessageIterInternal::ArrayIter(arr) => {
-                let arr = unsafe { &**arr };
+            MessageIterInternal::ArrayIter(_, sig) => {
+                let sig = unsafe { &**sig };
                 Some(vec![RustbusTypeOrDictEntry::Rustbus(
                     rustbus::signature::Type::Container(rustbus::signature::Container::Array(
-                        Box::new(arr.element_sig.clone()),
+                        Box::new(sig.clone()),
                     )),
                 )])
             }
-            MessageIterInternal::DictIter(dict) => {
-                let dict = unsafe { &**dict };
+            MessageIterInternal::DictIter(_, k, v) => {
+                let k = unsafe { &**k };
+                let v = unsafe { &**v };
                 Some(vec![RustbusTypeOrDictEntry::Rustbus(
                     rustbus::signature::Type::Container(rustbus::signature::Container::Dict(
-                        dict.key_sig.clone(),
-                        Box::new(dict.value_sig.clone()),
+                        *k,
+                        Box::new(v.clone()),
                     )),
                 )])
             }
@@ -288,9 +292,9 @@ impl DBusMessageIter {
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_init(
-    msg: *mut crate::DBusMessage,
-    args: *mut DBusMessageIter,
+pub extern "C" fn dbus_message_iter_init<'a>(
+    msg: *mut crate::DBusMessage<'a>,
+    args: *mut DBusMessageIter<'a>,
 ) -> u32 {
     if args.is_null() {
         return 0;
@@ -364,9 +368,9 @@ pub extern "C" fn dbus_message_iter_get_element_type(args: *mut DBusMessageIter)
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_recurse(
-    parent: *mut DBusMessageIter,
-    sub: *mut DBusMessageIter,
+pub extern "C" fn dbus_message_iter_recurse<'a>(
+    parent: *mut DBusMessageIter<'a>,
+    sub: *mut DBusMessageIter<'a>,
 ) {
     if parent.is_null() {
         return;
@@ -384,19 +388,28 @@ pub extern "C" fn dbus_message_iter_recurse(
             MessageIterInternal::DictEntryIter(key, value)
         }
         Some(RustbusParamOrDictEntry::Rustbus(param)) => match param {
-            rustbus::message::Param::Container(rustbus::message::Container::Array(arr)) => {
-                MessageIterInternal::ArrayIter(arr)
+            params::Param::Container(params::Container::Array(arr)) => {
+                MessageIterInternal::ArrayIter(arr.values.as_slice(), &arr.element_sig)
             }
-            rustbus::message::Param::Container(rustbus::message::Container::Dict(dict)) => {
-                MessageIterInternal::DictIter(dict)
+            params::Param::Container(params::Container::Dict(dict)) => {
+                MessageIterInternal::DictIter(&dict.map, &dict.key_sig, &dict.value_sig)
             }
-            rustbus::message::Param::Container(rustbus::message::Container::Struct(values)) => {
-                MessageIterInternal::StructIter(values)
+            params::Param::Container(params::Container::Struct(values)) => {
+                MessageIterInternal::StructIter(values.as_slice())
             }
-            rustbus::message::Param::Container(rustbus::message::Container::Variant(var)) => {
+            params::Param::Container(params::Container::Variant(var)) => {
                 MessageIterInternal::VariantIter(var.as_ref())
             }
-            rustbus::message::Param::Base(_) => return,
+            params::Param::Container(params::Container::ArrayRef(arr)) => {
+                MessageIterInternal::ArrayIter(arr.values, &arr.element_sig)
+            }
+            params::Param::Container(params::Container::DictRef(dict)) => {
+                MessageIterInternal::DictIter(dict.map, &dict.key_sig, &dict.value_sig)
+            }
+            params::Param::Container(params::Container::StructRef(values)) => {
+                MessageIterInternal::StructIter(*values)
+            }
+            params::Param::Base(_) => return,
         },
         Some(RustbusParamOrDictEntry::RustbusBase(_param)) => {
             return;
@@ -457,9 +470,7 @@ pub extern "C" fn dbus_message_iter_get_basic(
     let string_arena = &mut unsafe { &mut *(&mut *sub).msg }.string_arena;
     let sub = unsafe { &mut *sub };
 
-    if let Some(RustbusParamOrDictEntry::Rustbus(rustbus::message::Param::Base(base_param))) =
-        sub.current()
-    {
+    if let Some(RustbusParamOrDictEntry::Rustbus(params::Param::Base(base_param))) = sub.current() {
         crate::write_base_param(base_param, string_arena, arg);
     }
     if let Some(RustbusParamOrDictEntry::RustbusBase(base_param)) = sub.current() {
@@ -489,9 +500,9 @@ pub extern "C" fn dbus_message_iter_get_fixed_array(
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_init_append(
-    msg: *mut crate::DBusMessage,
-    args: *mut DBusMessageIter,
+pub extern "C" fn dbus_message_iter_init_append<'a>(
+    msg: *mut crate::DBusMessage<'a>,
+    args: *mut DBusMessageIter<'a>,
 ) -> u32 {
     if args.is_null() {
         return 0;
@@ -528,11 +539,11 @@ pub extern "C" fn dbus_message_iter_append_basic(
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_open_container(
-    parent: *mut DBusMessageIter,
+pub extern "C" fn dbus_message_iter_open_container<'a>(
+    parent: *mut DBusMessageIter<'a>,
     argtyp: libc::c_int,
     argsig: *const libc::c_char,
-    sub: *mut DBusMessageIter,
+    sub: *mut DBusMessageIter<'a>,
 ) {
     if parent.is_null() {
         return;
@@ -569,9 +580,9 @@ pub extern "C" fn dbus_message_iter_open_container(
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_close_container(
-    parent: *mut DBusMessageIter,
-    sub: *mut DBusMessageIter,
+pub extern "C" fn dbus_message_iter_close_container<'a>(
+    parent: *mut DBusMessageIter<'a>,
+    sub: *mut DBusMessageIter<'a>,
 ) {
     let parent = unsafe { &mut *parent };
     let sub = unsafe { &mut *sub };
@@ -579,17 +590,17 @@ pub extern "C" fn dbus_message_iter_close_container(
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_abandon_container(
-    parent: *mut DBusMessageIter,
-    sub: *mut DBusMessageIter,
+pub extern "C" fn dbus_message_iter_abandon_container<'a>(
+    parent: *mut DBusMessageIter<'a>,
+    sub: *mut DBusMessageIter<'a>,
 ) {
     // it dont think there is any harm in closing this properly
     dbus_message_iter_close_container(parent, sub);
 }
 #[no_mangle]
-pub extern "C" fn dbus_message_iter_abandon_container_if_open(
-    parent: *mut DBusMessageIter,
-    sub: *mut DBusMessageIter,
+pub extern "C" fn dbus_message_iter_abandon_container_if_open<'a>(
+    parent: *mut DBusMessageIter<'a>,
+    sub: *mut DBusMessageIter<'a>,
 ) {
     // it dont think there is any harm in closing this properly
     // sub.close() checks if there there is a valid interator or not anyways

@@ -10,5 +10,5 @@ crate-type = ["cdylib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rustbus = "0.1.0"
+rustbus = "0.2.0"
 libc = "*"
