@@ -25,6 +25,7 @@ enum MessageIterInternal {
 pub struct DBusMessageIter {
     inner: *mut MessageIterInternal,
     counter: usize,
+    msg: *mut crate::DBusMessage,
 }
 
 #[derive(Debug)]
@@ -288,7 +289,7 @@ impl DBusMessageIter {
 
 #[no_mangle]
 pub extern "C" fn dbus_message_iter_init(
-    msg: *const crate::DBusMessage,
+    msg: *mut crate::DBusMessage,
     args: *mut DBusMessageIter,
 ) -> u32 {
     if args.is_null() {
@@ -298,6 +299,7 @@ pub extern "C" fn dbus_message_iter_init(
     *args = DBusMessageIter {
         inner: Box::into_raw(Box::new(MessageIterInternal::MainIter(msg))),
         counter: 0,
+        msg,
     };
     1
 }
@@ -407,6 +409,7 @@ pub extern "C" fn dbus_message_iter_recurse(
     *sub = DBusMessageIter {
         inner: Box::into_raw(Box::new(iter)),
         counter: 0,
+        msg: parent.msg,
     }
 }
 
@@ -451,15 +454,16 @@ pub extern "C" fn dbus_message_iter_get_basic(
     if sub.is_null() {
         return;
     }
+    let string_arena = &mut unsafe { &mut *(&mut *sub).msg }.string_arena;
     let sub = unsafe { &mut *sub };
 
     if let Some(RustbusParamOrDictEntry::Rustbus(rustbus::message::Param::Base(base_param))) =
         sub.current()
     {
-        crate::write_base_param(base_param, arg);
+        crate::write_base_param(base_param, string_arena, arg);
     }
     if let Some(RustbusParamOrDictEntry::RustbusBase(base_param)) = sub.current() {
-        crate::write_base_param(base_param, arg);
+        crate::write_base_param(base_param, string_arena, arg);
     }
 }
 #[no_mangle]
@@ -499,6 +503,7 @@ pub extern "C" fn dbus_message_iter_init_append(
             let msg = unsafe { &*msg };
             msg.msg.params.len()
         },
+        msg,
     };
     1
 }
@@ -532,6 +537,7 @@ pub extern "C" fn dbus_message_iter_open_container(
     if parent.is_null() {
         return;
     }
+    let parent = unsafe { &mut *parent };
     if sub.is_null() {
         return;
     }
@@ -558,6 +564,7 @@ pub extern "C" fn dbus_message_iter_open_container(
             },
         ))),
         counter: 0,
+        msg: parent.msg,
     }
 }
 
@@ -609,13 +616,14 @@ pub extern "C" fn dbus_message_get_path(msg: *mut crate::DBusMessage) -> *const 
     if msg.is_null() {
         return std::ptr::null();
     }
-    let msg = unsafe { &*msg };
+    let msg = unsafe { &mut *msg };
 
-    msg.msg
-        .object
-        .as_ref()
-        .map(|p| unsafe { std::mem::transmute(p.as_ptr()) })
-        .unwrap_or(std::ptr::null())
+    if let Some(s) = &msg.msg.object {
+        let cstr = crate::get_cstring(&mut msg.string_arena, &s);
+        unsafe { std::mem::transmute(cstr.as_ptr()) }
+    } else {
+        std::ptr::null()
+    }
 }
 #[no_mangle]
 pub extern "C" fn dbus_message_set_path(
@@ -679,7 +687,6 @@ pub extern "C" fn dbus_message_get_path_decomposed(
 
         let boxed = Box::new(ptr_array);
         let array_ptr = boxed.as_ref().as_ptr();
-        
         // forget box. Needs to be freed in dbus_free_string_array()
         let _ptr = Box::into_raw(boxed);
         unsafe { *output = array_ptr };
@@ -692,13 +699,14 @@ pub extern "C" fn dbus_message_get_interface(msg: *mut crate::DBusMessage) -> *c
     if msg.is_null() {
         return std::ptr::null();
     }
-    let msg = unsafe { &*msg };
+    let msg = unsafe { &mut *msg };
 
-    msg.msg
-        .interface
-        .as_ref()
-        .map(|p| unsafe { std::mem::transmute(p.as_ptr()) })
-        .unwrap_or(std::ptr::null())
+    if let Some(s) = &msg.msg.interface {
+        let cstr = crate::get_cstring(&mut msg.string_arena, &s);
+        unsafe { std::mem::transmute(cstr.as_ptr()) }
+    } else {
+        std::ptr::null()
+    }
 }
 #[no_mangle]
 pub extern "C" fn dbus_message_set_interface(
@@ -747,13 +755,14 @@ pub extern "C" fn dbus_message_get_member(msg: *mut crate::DBusMessage) -> *cons
     if msg.is_null() {
         return std::ptr::null();
     }
-    let msg = unsafe { &*msg };
+    let msg = unsafe { &mut *msg };
 
-    msg.msg
-        .member
-        .as_ref()
-        .map(|p| unsafe { std::mem::transmute(p.as_ptr()) })
-        .unwrap_or(std::ptr::null())
+    if let Some(s) = &msg.msg.member {
+        let cstr = crate::get_cstring(&mut msg.string_arena, &s);
+        unsafe { std::mem::transmute(cstr.as_ptr()) }
+    } else {
+        std::ptr::null()
+    }
 }
 #[no_mangle]
 pub extern "C" fn dbus_message_set_member(
@@ -795,4 +804,74 @@ pub extern "C" fn dbus_message_has_member(
     } else {
         0
     }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_get_error_name(msg: *mut crate::DBusMessage) -> *const libc::c_char {
+    if msg.is_null() {
+        return std::ptr::null();
+    }
+    let msg = unsafe { &mut *msg };
+
+    if let Some(s) = &msg.msg.error_name {
+        let cstr = crate::get_cstring(&mut msg.string_arena, &s);
+        unsafe { std::mem::transmute(cstr.as_ptr()) }
+    } else {
+        std::ptr::null()
+    }
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_set_error_name(
+    msg: *mut crate::DBusMessage,
+    error_name: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!error_name.is_null());
+        CStr::from_ptr(error_name)
+    };
+    let error_name = c_str.to_str().unwrap();
+
+    msg.msg.member = Some(error_name.to_owned());
+    1
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_get_destination(
+    msg: *mut crate::DBusMessage,
+) -> *const libc::c_char {
+    if msg.is_null() {
+        return std::ptr::null();
+    }
+    let msg = unsafe { &mut *msg };
+
+    if let Some(s) = &msg.msg.destination {
+        let cstr = crate::get_cstring(&mut msg.string_arena, &s);
+        unsafe { std::mem::transmute(cstr.as_ptr()) }
+    } else {
+        std::ptr::null()
+    }
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_set_destination(
+    msg: *mut crate::DBusMessage,
+    destination: *const libc::c_char,
+) -> u32 {
+    if msg.is_null() {
+        return 0;
+    }
+    let msg = unsafe { &mut *msg };
+
+    let c_str = unsafe {
+        assert!(!destination.is_null());
+        CStr::from_ptr(destination)
+    };
+    let destination = c_str.to_str().unwrap();
+
+    msg.msg.destination = Some(destination.to_owned());
+    1
 }

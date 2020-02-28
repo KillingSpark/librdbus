@@ -262,7 +262,11 @@ pub fn param_from_parts(
     Some(param)
 }
 
-pub fn write_base_param(param: &rustbus::message::Base, arg: *mut std::ffi::c_void) {
+pub fn write_base_param(
+    param: &rustbus::message::Base,
+    string_arena: &mut crate::StringArena,
+    arg: *mut std::ffi::c_void,
+) {
     match param {
         rustbus::message::Base::Boolean(val) => {
             assert!(!arg.is_null());
@@ -314,20 +318,25 @@ pub fn write_base_param(param: &rustbus::message::Base, arg: *mut std::ffi::c_vo
             let mutref: &mut u32 = unsafe { std::mem::transmute(arg) };
             *mutref = *val;
         }
+
         rustbus::message::Base::String(val) => {
             assert!(!arg.is_null());
             let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
-            *mutref = unsafe { std::mem::transmute(val.as_ptr()) };
+
+            let cstr = crate::get_cstring(string_arena, &val);
+            *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
         }
         rustbus::message::Base::ObjectPath(val) => {
             assert!(!arg.is_null());
             let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
-            *mutref = unsafe { std::mem::transmute(val.as_ptr()) };
+            let cstr = crate::get_cstring(string_arena, &val);
+            *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
         }
         rustbus::message::Base::Signature(val) => {
             assert!(!arg.is_null());
             let mutref: &mut *const libc::c_char = unsafe { std::mem::transmute(arg) };
-            *mutref = unsafe { std::mem::transmute(val.as_ptr()) };
+            let cstr = crate::get_cstring(string_arena, &val);
+            *mutref = unsafe { std::mem::transmute(cstr.as_ptr()) };
         }
     }
 }

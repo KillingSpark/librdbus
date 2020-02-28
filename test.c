@@ -82,6 +82,9 @@ void print_msg(DBusMessage *msg) {
   dbus_message_iter_init(msg, &iter);
 
   printf("Start printing message\n");
+  printf("interface: %s\n", dbus_message_get_interface(msg));
+  printf("object: %s\n", dbus_message_get_path(msg));
+  printf("member: %s\n", dbus_message_get_member(msg));
   print_iter(&iter);
   printf("End printing message\n");
 }

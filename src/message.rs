@@ -6,15 +6,32 @@ pub const DBUS_MESSAGE_TYPE_METHOD_RETURN: libc::c_int = 2;
 pub const DBUS_MESSAGE_TYPE_ERROR: libc::c_int = 3;
 pub const DBUS_MESSAGE_TYPE_SIGNAL: libc::c_int = 4;
 
+pub type StringArena = std::collections::HashMap<String, Box<std::ffi::CString>>;
+
+pub fn get_cstring<'a>(arena: &'a mut StringArena, string: &str) -> &'a std::ffi::CString {
+    if !arena.contains_key(string) {
+        arena.insert(
+            string.to_owned(),
+            Box::new(std::ffi::CString::new(string).unwrap()),
+        );
+    }
+    arena.get(string).unwrap()
+}
+
 #[derive(Clone)]
 pub struct DBusMessage {
     pub msg: rustbus::Message,
     refcount: u64,
+    pub string_arena: StringArena,
 }
 
 impl DBusMessage {
     pub fn new(msg: rustbus::Message) -> Self {
-        Self { msg, refcount: 0 }
+        Self {
+            msg,
+            refcount: 0,
+            string_arena: std::collections::HashMap::new(),
+        }
     }
 }
 
@@ -336,13 +353,13 @@ pub fn rustbus_to_c_base_type(rtype: &rustbus::signature::Base) -> libc::c_int {
 pub fn rustbus_to_c_container_type(rtype: &rustbus::signature::Container) -> libc::c_int {
     match rtype {
         rustbus::signature::Container::Array(_) => crate::DBUS_TYPE_ARRAY,
-        rustbus::signature::Container::Dict(_,_) => crate::DBUS_TYPE_ARRAY,
+        rustbus::signature::Container::Dict(_, _) => crate::DBUS_TYPE_ARRAY,
         rustbus::signature::Container::Struct(_) => crate::DBUS_TYPE_STRUCT,
         rustbus::signature::Container::Variant => crate::DBUS_TYPE_VARIANT,
     }
 }
 pub fn rustbus_to_c_type(rtype: &rustbus::signature::Type) -> libc::c_int {
-    match rtype{
+    match rtype {
         rustbus::signature::Type::Base(b) => rustbus_to_c_base_type(b),
         rustbus::signature::Type::Container(c) => rustbus_to_c_container_type(c),
     }
@@ -373,7 +390,7 @@ pub extern "C" fn dbus_message_get_args(msg: *mut DBusMessage, typ1: libc::c_int
                 let param = &msg.msg.params[counter];
                 if rustbus::signature::Type::Base(base_type) == param.sig() {
                     if let rustbus::message::Param::Base(base_param) = param {
-                        crate::write_base_param(base_param, unsafe { arg_ptr.read() });
+                        crate::write_base_param(base_param, &mut msg.string_arena, unsafe { arg_ptr.read() });
                     }
                 } else {
                     // TODO What do we do here?!
@@ -404,7 +421,9 @@ pub extern "C" fn dbus_message_get_args(msg: *mut DBusMessage, typ1: libc::c_int
                             let param = &array_param.values[idx as usize];
                             if rustbus::signature::Type::Base(base_type) == param.sig() {
                                 if let rustbus::message::Param::Base(base_param) = param {
-                                    crate::write_base_param(base_param, unsafe { arg_ptr.read() });
+                                    crate::write_base_param(base_param, &mut msg.string_arena, unsafe {
+                                        arg_ptr.read()
+                                    });
                                 }
                             } else {
                                 // TODO What do we do here?!

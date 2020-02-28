@@ -4,6 +4,7 @@ typedef uint32_t dbus_uint32_t;
 
 typedef struct DBusMessageIter {
   void *msg;
+  void *internal;
   uint64_t counter;
 } DBusMessageIter;
 
@@ -104,6 +105,10 @@ char *dbus_message_iter_get_signature(DBusMessageIter*);
 
 void dbus_message_iter_get_basic(DBusMessageIter*, void *);
 uint32_t dbus_message_iter_get_element_count(DBusMessageIter *msg);
+
+char *dbus_message_get_interface(DBusMessage *);
+char *dbus_message_get_path(DBusMessage *);
+char *dbus_message_get_member(DBusMessage *);
 
 uint32_t dbus_message_set_reply_serial(DBusMessage *msg, uint32_t reply_serial);
 
