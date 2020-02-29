@@ -1,3 +1,8 @@
+#! /bin/sh
+# build librdbus
 cargo build
-gcc --std=c11 -o c-example test.c -L target/debug/ -llibrdbus
-LD_LIBRARY_PATH=target/debug/ ./c-example
+
+# build the c example
+mkdir -p target/c-example
+gcc --std=c11 -o target/c-example/c-example test.c -L target/debug/ -llibrdbus
+LD_LIBRARY_PATH=target/debug/ ./target/c-example/c-example
