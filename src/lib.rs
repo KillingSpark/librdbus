@@ -6,6 +6,7 @@ mod tests {
     }
 }
 
+mod data_slot;
 mod message;
 mod message_iter;
 use message::*;
@@ -20,6 +21,56 @@ pub enum DBusBusType {
     DBUS_BUS_SESSION,
     DBUS_BUS_SYSTEM,
     DBUS_BUS_STARTER,
+}
+
+const METHOD_CALL_STR: &'static str = "method_call";
+const METHOD_RETURN_STR: &'static str = "method_return";
+const SIGNAL_STR: &'static str = "signal";
+const ERROR_STR: &'static str = "error";
+const INVALID_STR: &'static str = "invalid";
+
+#[no_mangle]
+pub extern "C" fn dbus_message_type_from_string(typ: *const libc::c_char) -> libc::c_int {
+    if typ.is_null() {
+        return DBUS_MESSAGE_TYPE_INVALID;
+    }
+    let cstr = unsafe { std::ffi::CStr::from_ptr(typ) };
+
+    if cstr.to_bytes().eq(METHOD_CALL_STR.as_bytes()) {
+        return DBUS_MESSAGE_TYPE_METHOD_CALL;
+    }
+    if cstr.to_bytes().eq(METHOD_RETURN_STR.as_bytes()) {
+        return DBUS_MESSAGE_TYPE_METHOD_RETURN;
+    }
+    if cstr.to_bytes().eq(SIGNAL_STR.as_bytes()) {
+        return DBUS_MESSAGE_TYPE_SIGNAL;
+    }
+    if cstr.to_bytes().eq(ERROR_STR.as_bytes()) {
+        return DBUS_MESSAGE_TYPE_ERROR;
+    }
+    return DBUS_MESSAGE_TYPE_INVALID;
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_message_type_to_string(typ: libc::c_int) -> *const libc::c_char {
+    unsafe {
+        std::mem::transmute(match typ {
+            DBUS_MESSAGE_TYPE_METHOD_CALL => METHOD_CALL_STR.as_ptr(),
+            DBUS_MESSAGE_TYPE_METHOD_RETURN => METHOD_RETURN_STR.as_ptr(),
+            DBUS_MESSAGE_TYPE_SIGNAL => SIGNAL_STR.as_ptr(),
+            DBUS_MESSAGE_TYPE_ERROR => ERROR_STR.as_ptr(),
+            _ => INVALID_STR.as_ptr(),
+        })
+    }
+}
+
+pub type DbusBool = u32;
+pub fn dbus_bool(b: bool) -> DbusBool {
+    if b {
+        1
+    } else {
+        0
+    }
 }
 
 pub const DBUS_TYPE_INVALID: libc::c_int = 0 as libc::c_int;
@@ -47,6 +98,7 @@ type DBusConnection<'a> = rustbus::client_conn::RpcConn<'a, 'a>;
 pub struct DBusError {
     is_set: bool,
     error: String,
+    name: String,
 }
 
 #[no_mangle]

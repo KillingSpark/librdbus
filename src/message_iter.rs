@@ -22,6 +22,7 @@ enum MessageIterInternal<'a> {
     ArrayIter(*const [params::Param<'a, 'a>], *const signature::Type),
     VariantIter(*const params::Variant<'a, 'a>),
     DictEntryIter(*const params::Base<'a>, *const params::Param<'a, 'a>),
+    Closed,
 }
 
 #[repr(C)]
@@ -122,6 +123,7 @@ impl<'a> DBusMessageIter<'a> {
                 let values = unsafe { &**values };
                 values.len()
             }
+            MessageIterInternal::Closed => 0,
         }
     }
 
@@ -182,6 +184,7 @@ impl<'a> DBusMessageIter<'a> {
                 let values = unsafe { &**values };
                 Some(RustbusParamOrDictEntry::Rustbus(&values[self.counter]))
             }
+            MessageIterInternal::Closed => None,
         }
     }
 
@@ -240,6 +243,7 @@ impl<'a> DBusMessageIter<'a> {
                     )),
                 )])
             }
+            MessageIterInternal::Closed => None,
         }
     }
 
@@ -304,6 +308,19 @@ pub extern "C" fn dbus_message_iter_init<'a>(
         inner: Box::into_raw(Box::new(MessageIterInternal::MainIter(msg))),
         counter: 0,
         msg,
+    };
+    1
+}
+#[no_mangle]
+pub extern "C" fn dbus_message_iter_init_closed<'a>(args: *mut DBusMessageIter<'a>) -> u32 {
+    if args.is_null() {
+        return 0;
+    }
+    let args = unsafe { &mut *args };
+    *args = DBusMessageIter {
+        inner: Box::into_raw(Box::new(MessageIterInternal::Closed)),
+        counter: 0,
+        msg: std::ptr::null_mut(),
     };
     1
 }
