@@ -1,6 +1,7 @@
 use crate::*;
 use std::collections::VecDeque;
 
+#[derive(Eq, PartialEq, Debug)]
 pub enum ConState {
     NewCreated,
     NotAuthenticated,
@@ -172,4 +173,54 @@ pub extern "C" fn dbus_connection_flush(con: *mut DBusConnection) {
     while !con.out_queue.is_empty() {
         con.send_next_message(None);
     }
+}
+
+fn calc_remaining_time(
+    start: &std::time::Instant,
+    timeout: &Option<std::time::Duration>,
+) -> Result<Option<std::time::Duration>, ()> {
+    match timeout {
+        None => Ok(None),
+        Some(d) => {
+            let elapsed = start.elapsed();
+            if elapsed >= *d {
+                Err(())
+            } else {
+                Ok(Some(*d - elapsed))
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_connection_read_write(
+    con: *mut DBusConnection,
+    timeout: libc::c_int,
+) -> u32 {
+    if con.is_null() {
+        return dbus_bool(false);
+    }
+    let con = unsafe { &mut *con };
+    if con.state == ConState::Disconnected {
+        return dbus_bool(false);
+    }
+
+    let timeout = if timeout < 0 {
+        Some(std::time::Duration::from_millis(timeout as u64))
+    } else {
+        None
+    };
+    // TODO the doc is not exactly clear on the semantics here
+    let start = std::time::Instant::now();
+    while !con.out_queue.is_empty() {
+        if let Ok(timeout) = calc_remaining_time(&start, &timeout) {
+            con.send_next_message(timeout);
+        }
+    }
+
+    // But the read part needs some changes to rustbus. We need a check on the
+    // fd to see whether new data is available and also expose the get_next_message from the underlying con
+
+    // It might be better to just use the con directly and reimplement parts of rustbus here so ensure compatibility with libdbus
+    return dbus_bool(true);
 }
