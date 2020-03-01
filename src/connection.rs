@@ -1,4 +1,5 @@
 use crate::*;
+use std::collections::VecDeque;
 
 pub enum ConState {
     NewCreated,
@@ -7,11 +8,15 @@ pub enum ConState {
     Disconnected,
 }
 
+pub struct DBusPreallocatedSend {}
+
 pub struct DBusConnection<'a> {
     con: rustbus::client_conn::RpcConn<'a, 'a>,
     ref_count: u64,
     state: ConState,
     exit_on_disconnect: bool,
+
+    out_queue: VecDeque<*mut DBusMessage<'a>>,
 }
 
 impl<'a> DBusConnection<'a> {
@@ -21,6 +26,15 @@ impl<'a> DBusConnection<'a> {
             ref_count: 1,
             state: ConState::Ready,
             exit_on_disconnect: false,
+            out_queue: VecDeque::new(),
+        }
+    }
+}
+
+impl<'a> Drop for DBusConnection<'a> {
+    fn drop(&mut self) {
+        for msg in &mut self.out_queue {
+            crate::message::dbus_message_unref(*msg);
         }
     }
 }
@@ -71,7 +85,10 @@ pub extern "C" fn dbus_connection_send_hello<'a>(
         return 0;
     }
     let con = unsafe { &mut *con };
-    match con.con.send_message(&mut rustbus::standard_messages::hello(), None) {
+    match con
+        .con
+        .send_message(&mut rustbus::standard_messages::hello(), None)
+    {
         Ok(sent_serial) => {
             if !serial.is_null() {
                 let serial = unsafe { &mut *serial };
@@ -92,23 +109,37 @@ pub extern "C" fn dbus_connection_send<'a>(
     if con.is_null() {
         return 0;
     }
+    let con = unsafe { &mut *con };
     if msg.is_null() {
         return 0;
     }
-    let con = unsafe { &mut *con };
     let msg = unsafe { &mut *msg };
-    let mut msg = msg.msg.clone();
-    let r = con.con.send_message(&mut msg, None);
+    let new_serial = con.con.alloc_serial();
+    msg.msg.serial = Some(new_serial);
+    unsafe { *serial = new_serial };
+    con.out_queue.push_back(msg);
+    dbus_bool(true)
+}
 
-    match r {
-        Ok(sent_serial) => {
-            if !serial.is_null() {
-                let serial = unsafe { &mut *serial };
-                *serial = sent_serial;
-            }
-            1
-        }
-        Err(_e) => 0,
+#[no_mangle]
+pub extern "C" fn dbus_connection_ref(con: *mut DBusConnection) -> *mut DBusConnection {
+    if con.is_null() {
+        return con;
+    }
+    let con = unsafe { &mut *con };
+    con.ref_count += 1;
+    return con;
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_connection_unref(con: *mut DBusConnection) {
+    if con.is_null() {
+        return;
+    }
+    let con = unsafe { &mut *con };
+    con.ref_count -= 1;
+    if con.ref_count == 0 {
+        dbus_connection_close(con);
     }
 }
 
