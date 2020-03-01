@@ -109,4 +109,5 @@ int main(void) {
   print_msg(sig);
 
   dbus_connection_send(con, sig, &serial);
+  dbus_connection_flush(con);
 }

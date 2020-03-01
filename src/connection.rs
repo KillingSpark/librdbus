@@ -29,6 +29,15 @@ impl<'a> DBusConnection<'a> {
             out_queue: VecDeque::new(),
         }
     }
+
+    pub fn send_next_message(&mut self, timeout: Option<std::time::Duration>) {
+        if let Some(msg) = self.out_queue.pop_front() {
+            if !msg.is_null() {
+                let msg = unsafe { &mut *msg };
+                self.con.send_message(&mut msg.msg, timeout).unwrap();
+            }
+        }
+    }
 }
 
 impl<'a> Drop for DBusConnection<'a> {
@@ -151,5 +160,16 @@ pub extern "C" fn dbus_connection_close(con: *mut DBusConnection) {
     unsafe {
         Box::from_raw(con);
         //dropped here -> free'd
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_connection_flush(con: *mut DBusConnection) {
+    if con.is_null() {
+        return;
+    }
+    let con = unsafe { &mut *con };
+    while !con.out_queue.is_empty() {
+        con.send_next_message(None);
     }
 }

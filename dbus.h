@@ -26,6 +26,7 @@ typedef enum {
 DBusConnection *dbus_bus_get(DBusBusType bus, DBusError *err);
 
 void dbus_connection_close(DBusConnection *con);
+void dbus_connection_flush(DBusConnection *con);
 
 uint32_t dbus_connection_send(DBusConnection *con, DBusMessage *msg,
                               uint32_t *serial);
