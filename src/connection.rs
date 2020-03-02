@@ -217,7 +217,13 @@ pub extern "C" fn dbus_connection_send<'a>(
     let msg = unsafe { &mut *msg };
     let new_serial = con.con.alloc_serial();
     msg.msg.serial = Some(new_serial);
-    unsafe { *serial = new_serial };
+
+    if !serial.is_null() {
+        unsafe { *serial = new_serial };
+    }
+
+    // increase ref counter
+    dbus_message_ref(msg);
     con.out_queue.push_back(msg);
     dbus_bool(true)
 }
