@@ -106,6 +106,12 @@ pub extern "C" fn dbus_error_init(err: *mut DBusError) {
     err.error = String::new();
     err.is_set = false;
 }
+#[no_mangle]
+pub extern "C" fn dbus_error_free(err: *mut DBusError) {
+    let err = unsafe { &mut *err };
+    err.error = String::new();
+    err.is_set = false;
+}
 
 #[no_mangle]
 pub extern "C" fn dbus_error_is_set(err: *mut DBusError) -> libc::c_int {
@@ -120,6 +126,11 @@ pub extern "C" fn dbus_error_is_set(err: *mut DBusError) -> libc::c_int {
         0
     }
 }
+
+#[no_mangle]
+pub extern "C" fn dbus_bus_add_match() {
+    unimplemented!();
+}   
 
 pub fn param_from_parts<'a>(
     argtyp: libc::c_int,

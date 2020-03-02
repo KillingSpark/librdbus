@@ -249,6 +249,15 @@ pub extern "C" fn dbus_connection_read_write(
 }
 
 #[no_mangle]
+pub extern "C" fn dbus_connection_read_write_dispatch(
+    con: *mut DBusConnection,
+    timeout: libc::c_int,
+) -> DBusDispatchStatus {
+    dbus_connection_read_write(con, timeout);
+    dbus_connection_dispatch(con)
+}
+
+#[no_mangle]
 pub extern "C" fn dbus_connection_dispatch(con: *mut DBusConnection) -> DBusDispatchStatus {
     if con.is_null() {
         return DBusDispatchStatus::Complete;
