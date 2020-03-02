@@ -10,24 +10,27 @@ pub enum ConState {
 }
 
 pub struct DBusPreallocatedSend {}
+pub struct DBusDispatchStatus {}
 
 pub struct DBusConnection<'a> {
-    con: rustbus::client_conn::RpcConn<'a, 'a>,
+    con: rustbus::client_conn::Conn,
     ref_count: u64,
     state: ConState,
     exit_on_disconnect: bool,
 
     out_queue: VecDeque<*mut DBusMessage<'a>>,
+    in_queue: VecDeque<*mut DBusMessage<'a>>,
 }
 
 impl<'a> DBusConnection<'a> {
-    pub fn new(con: rustbus::client_conn::RpcConn<'a, 'a>) -> Self {
+    pub fn new(con: rustbus::client_conn::Conn) -> Self {
         Self {
             con,
             ref_count: 1,
             state: ConState::Ready,
             exit_on_disconnect: false,
             out_queue: VecDeque::new(),
+            in_queue: VecDeque::new(),
         }
     }
 
@@ -65,9 +68,7 @@ pub extern "C" fn dbus_bus_get<'a>(
     };
     match path {
         Ok(path) => match rustbus::client_conn::Conn::connect_to_bus(path, false) {
-            Ok(con) => Box::into_raw(Box::new(DBusConnection::new(
-                rustbus::client_conn::RpcConn::new(con),
-            ))),
+            Ok(con) => Box::into_raw(Box::new(DBusConnection::new(con))),
             Err(e) => {
                 if !err.is_null() {
                     let err: &mut DBusError = unsafe { &mut *err };
@@ -218,9 +219,47 @@ pub extern "C" fn dbus_connection_read_write(
         }
     }
 
-    // But the read part needs some changes to rustbus. We need a check on the
-    // fd to see whether new data is available and also expose the get_next_message from the underlying con
+    match con.con.can_read_from_source() {
+        Ok(true) => {
+            if let Ok(timeout) = calc_remaining_time(&start, &timeout) {
+                if let Err(_e) = con.con.read_once(timeout) {
+                    // TODO more cleanup
+                    con.state = ConState::Disconnected;
+                    return dbus_bool(false);
+                }
+            }
+        }
+        Ok(false) => {
+            // nothing to do
+        }
+        Err(_e) => {
+            // TODO more cleanup
+            con.state = ConState::Disconnected;
+            return dbus_bool(false);
+        }
+    }
 
-    // It might be better to just use the con directly and reimplement parts of rustbus here so ensure compatibility with libdbus
     return dbus_bool(true);
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_connection_dispatch(con: *mut DBusConnection) -> DBusDispatchStatus {
+    if con.is_null() {
+        return DBusDispatchStatus {};
+    }
+    let con = unsafe { &mut *con };
+    if con.con.buffer_contains_whole_message().unwrap() {
+        match con
+            .con
+            .get_next_message(Some(std::time::Duration::from_micros(0)))
+        {
+            Err(_e) => {
+                // TODO
+            }
+            Ok(msg) => con
+                .in_queue
+                .push_back(Box::into_raw(Box::new(DBusMessage::new(msg)))),
+        }
+    }
+    DBusDispatchStatus {}
 }
