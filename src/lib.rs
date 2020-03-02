@@ -6,10 +6,10 @@ mod tests {
     }
 }
 
+mod connection;
 mod data_slot;
 mod message;
 mod message_iter;
-mod connection;
 use message::*;
 use rustbus::params;
 use std::ffi::CStr;
@@ -101,6 +101,20 @@ pub struct DBusError {
 }
 
 #[no_mangle]
+pub extern "C" fn dbus_malloc(size: libc::size_t) -> *mut std::ffi::c_void {
+    if size == 0 {
+        std::ptr::null_mut()
+    } else {
+        unsafe { libc::malloc(size) }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_free(data: *mut std::ffi::c_void) {
+    unsafe { libc::free(data) }
+}
+
+#[no_mangle]
 pub extern "C" fn dbus_error_init(err: *mut DBusError) {
     let err = unsafe { &mut *err };
     err.error = String::new();
@@ -130,7 +144,7 @@ pub extern "C" fn dbus_error_is_set(err: *mut DBusError) -> libc::c_int {
 #[no_mangle]
 pub extern "C" fn dbus_bus_add_match() {
     unimplemented!();
-}   
+}
 
 pub fn param_from_parts<'a>(
     argtyp: libc::c_int,
