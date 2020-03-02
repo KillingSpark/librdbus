@@ -10,7 +10,13 @@ pub enum ConState {
 }
 
 pub struct DBusPreallocatedSend {}
-pub struct DBusDispatchStatus {}
+
+#[repr(C)]
+pub enum DBusDispatchStatus {
+    Complete,
+    DataRemaining,
+    NeedMemory,
+}
 
 pub struct DBusConnection<'a> {
     con: rustbus::client_conn::Conn,
@@ -245,7 +251,7 @@ pub extern "C" fn dbus_connection_read_write(
 #[no_mangle]
 pub extern "C" fn dbus_connection_dispatch(con: *mut DBusConnection) -> DBusDispatchStatus {
     if con.is_null() {
-        return DBusDispatchStatus {};
+        return DBusDispatchStatus::Complete;
     }
     let con = unsafe { &mut *con };
     if con.con.buffer_contains_whole_message().unwrap() {
@@ -261,5 +267,9 @@ pub extern "C" fn dbus_connection_dispatch(con: *mut DBusConnection) -> DBusDisp
                 .push_back(Box::into_raw(Box::new(DBusMessage::new(msg)))),
         }
     }
-    DBusDispatchStatus {}
+    if con.con.can_read_from_source().unwrap() {
+        DBusDispatchStatus::DataRemaining
+    } else {
+        DBusDispatchStatus::Complete
+    }
 }
