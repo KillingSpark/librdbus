@@ -56,15 +56,17 @@ pub enum DBusDispatchStatus {
 }
 
 pub struct DBusConnection<'a> {
-    con: rustbus::client_conn::Conn,
-    ref_count: u64,
-    state: ConState,
-    exit_on_disconnect: bool,
+    pub con: rustbus::client_conn::Conn,
+    pub ref_count: u64,
+    pub state: ConState,
+    pub exit_on_disconnect: bool,
 
-    out_queue: VecDeque<*mut DBusMessage<'a>>,
-    in_queue: VecDeque<*mut DBusMessage<'a>>,
+    pub out_queue: VecDeque<*mut DBusMessage<'a>>,
+    pub in_queue: VecDeque<*mut DBusMessage<'a>>,
 
-    pending_calls: Vec<*mut DBusPendingCall<'a>>,
+    pub pending_calls: Vec<*mut DBusPendingCall<'a>>,
+
+    pub unique_name: Option<std::ffi::CString>,
 }
 
 impl<'a> DBusConnection<'a> {
@@ -77,6 +79,7 @@ impl<'a> DBusConnection<'a> {
             out_queue: VecDeque::new(),
             in_queue: VecDeque::new(),
             pending_calls: Vec::new(),
+            unique_name: None,
         }
     }
 
@@ -113,6 +116,28 @@ impl<'a> Drop for DBusConnection<'a> {
     fn drop(&mut self) {
         for msg in &mut self.out_queue {
             crate::message::dbus_message_unref(*msg);
+        }
+    }
+}
+#[no_mangle]
+pub extern "C" fn dbus_connection_open<'a>(
+    addr: *const libc::c_char,
+    err: *mut DBusError,
+) -> *mut DBusConnection<'a> {
+    let addr = unsafe {
+        assert!(!addr.is_null());
+        CStr::from_ptr(addr)
+    };
+    let path = addr.to_str().unwrap().to_string();
+
+    match rustbus::client_conn::Conn::connect_to_bus(path.into(), false) {
+        Ok(con) => Box::into_raw(Box::new(DBusConnection::new(con))),
+        Err(e) => {
+            if !err.is_null() {
+                let err: &mut DBusError = unsafe { &mut *err };
+                err.error = format!("Could not connect to bus: {:?}", e);
+            }
+            std::ptr::null_mut()
         }
     }
 }

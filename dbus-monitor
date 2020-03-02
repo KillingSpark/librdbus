@@ -2,4 +2,4 @@
 
 cargo build > /dev/null 2> /dev/null
 cp target/debug/liblibrdbus.so target/debug/libdbus-1.so.3
-LD_LIBRARY_PATH=target/debug/ /bin/dbus-monitor
+LD_LIBRARY_PATH=target/debug/ /bin/dbus-send
