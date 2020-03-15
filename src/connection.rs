@@ -135,7 +135,7 @@ pub extern "C" fn dbus_connection_open<'a>(
         Err(e) => {
             if !err.is_null() {
                 let err: &mut DBusError = unsafe { &mut *err };
-                err.error = format!("Could not connect to bus: {:?}", e);
+                err.error = Box::new(format!("Could not connect to bus: {:?}", e));
             }
             std::ptr::null_mut()
         }
@@ -152,7 +152,7 @@ pub extern "C" fn dbus_bus_get<'a>(
         DBusBusType::DBUS_BUS_SYSTEM => rustbus::get_system_bus_path(),
         _ => {
             let err: &mut DBusError = unsafe { &mut *err };
-            err.error = format!("Unknown bus type: {:?}", bus);
+            err.error = Box::new(format!("Unknown bus type: {:?}", bus));
             return std::ptr::null_mut();
         }
     };
@@ -162,7 +162,7 @@ pub extern "C" fn dbus_bus_get<'a>(
             Err(e) => {
                 if !err.is_null() {
                     let err: &mut DBusError = unsafe { &mut *err };
-                    err.error = format!("Could not connect to bus: {:?}", e);
+                    err.error = Box::new(format!("Could not connect to bus: {:?}", e));
                 }
                 std::ptr::null_mut()
             }
@@ -170,7 +170,7 @@ pub extern "C" fn dbus_bus_get<'a>(
         Err(e) => {
             if !err.is_null() {
                 let err: &mut DBusError = unsafe { &mut *err };
-                err.error = format!("Could open path for bus: {:?}", e);
+                err.error = Box::new(format!("Could open path for bus: {:?}", e));
             }
             std::ptr::null_mut()
         }

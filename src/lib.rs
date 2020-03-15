@@ -6,12 +6,12 @@ mod tests {
     }
 }
 
+mod bus;
 mod connection;
 mod data_slot;
 mod message;
 mod message_iter;
 mod private;
-mod bus;
 mod validate;
 use message::*;
 use rustbus::params;
@@ -98,9 +98,9 @@ pub const DBUS_TYPE_DICTENTRY: libc::c_int = b'e' as libc::c_int;
 
 #[repr(C)]
 pub struct DBusError {
+    error: Box<String>,
+    name: Box<String>,
     is_set: bool,
-    error: String,
-    name: String,
 }
 
 #[no_mangle]
@@ -119,14 +119,20 @@ pub extern "C" fn dbus_free(data: *mut std::ffi::c_void) {
 
 #[no_mangle]
 pub extern "C" fn dbus_error_init(err: *mut DBusError) {
+    assert!(!err.is_null());
     let err = unsafe { &mut *err };
-    err.error = String::new();
-    err.is_set = false;
+    let mut new_err = DBusError {
+        error: Box::new(String::new()),
+        name: Box::new(String::new()),
+        is_set: false,
+    };
+    std::mem::swap(err, &mut new_err);
+    std::mem::forget(new_err);
 }
 #[no_mangle]
 pub extern "C" fn dbus_error_free(err: *mut DBusError) {
     let err = unsafe { &mut *err };
-    err.error = String::new();
+    err.error = Box::new(String::new());
     err.is_set = false;
 }
 

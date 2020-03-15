@@ -925,17 +925,17 @@ pub extern "C" fn dbus_set_error_from_message(
 
     dbus_bool(if let rustbus::MessageType::Error = msg.msg.typ {
         err.is_set = true;
-        err.name = msg.msg.error_name.clone().unwrap_or("".to_owned());
+        err.name = Box::new(msg.msg.error_name.clone().unwrap_or("".to_owned()));
         if !msg.msg.params.is_empty() {
             if let rustbus::params::Param::Base(rustbus::params::Base::String(error_msg)) =
                 &msg.msg.params[0]
             {
-                err.error = error_msg.clone();
+                err.error = Box::new(error_msg.clone());
             }
             if let rustbus::params::Param::Base(rustbus::params::Base::StringRef(error_msg)) =
                 &msg.msg.params[0]
             {
-                err.error = error_msg.to_string();
+                err.error = Box::new(error_msg.to_string());
             }
         }
         true
@@ -1038,8 +1038,8 @@ pub extern "C" fn dbus_message_demarshal<'a>(
                 return std::ptr::null_mut();
             }
             let err = unsafe { &mut *err };
-            err.name = "DemarshallingError".to_owned();
-            err.error = format!("Demarshalling error: {:?}", e);
+            err.name = Box::new("DemarshallingError".to_owned());
+            err.error = Box::new(format!("Demarshalling error: {:?}", e));
             err.is_set = true;
             std::mem::forget(buf);
             return std::ptr::null_mut();
@@ -1058,8 +1058,8 @@ pub extern "C" fn dbus_message_demarshal<'a>(
                 return std::ptr::null_mut();
             }
             let err = unsafe { &mut *err };
-            err.name = "DemarshallingError".to_owned();
-            err.error = format!("Demarshalling error: {:?}", e);
+            err.name = Box::new("DemarshallingError".to_owned());
+            err.error = Box::new(format!("Demarshalling error: {:?}", e));
             err.is_set = true;
             std::mem::forget(buf);
             return std::ptr::null_mut();
@@ -1087,8 +1087,8 @@ pub extern "C" fn dbus_message_demarshal_bytes_needed(
                 return ret;
             }
             let err = unsafe { &mut *err };
-            err.name = "DemarshallingError".to_owned();
-            err.error = format!("Demarshalling error: {:?}", e);
+            err.name = Box::new("DemarshallingError".to_owned());
+            err.error = Box::new(format!("Demarshalling error: {:?}", e));
             err.is_set = true;
             std::mem::forget(buf);
             return ret;
