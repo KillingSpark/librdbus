@@ -52,6 +52,9 @@ impl<'a> DBusPendingCall<'a> {
 pub enum DBusDispatchStatus {
     Complete,
     DataRemaining,
+
+    /// Unused. Rust has currently no easy way to detect OOM
+    #[allow(unused)]
     NeedMemory,
 }
 
