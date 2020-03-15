@@ -1,5 +1,5 @@
-use crate::*;
 use crate::error::*;
+use crate::*;
 use std::collections::VecDeque;
 
 #[derive(Eq, PartialEq, Debug)]
@@ -434,7 +434,7 @@ pub extern "C" fn dbus_connection_send_with_reply<'a>(
     } else {
         Some(std::time::Duration::from_millis(timeout as u64))
     };
-
+    
     *pending = Box::into_raw(Box::new(DBusPendingCall::new(serial, timeout)));
     dbus_bool(true)
 }
@@ -454,13 +454,13 @@ pub extern "C" fn dbus_connection_send_with_reply_and_block<'a>(
         return std::ptr::null_mut();
     }
     let msg = unsafe { &mut *msg };
-    let pending = std::ptr::null_mut();
-    dbus_connection_send_with_reply(con, msg, pending, timeout);
+    let mut pending: *mut DBusPendingCall = std::ptr::null_mut();
+    dbus_connection_send_with_reply(con, msg, &mut pending, timeout);
 
     // TODO convert error replys to DBusError
     let _ = err;
 
-    let pending = unsafe { &mut **pending };
+    let pending = unsafe { &mut *pending };
     match pending.wait_for_reply() {
         Ok(()) => {
             if let Some(reply) = pending.reply {
@@ -516,7 +516,7 @@ pub extern "C" fn dbus_connection_remove_filter<'a>(
     }
     let con = unsafe { &mut *con };
 
-    // this is necessaey because the DBusHandleMessageFunctions cannot be compared directly 
+    // this is necessaey because the DBusHandleMessageFunctions cannot be compared directly
     let filter_ptr: *const std::ffi::c_void = unsafe { std::mem::transmute(filter) };
     for f in &con.filters {
         let f_ptr: *const std::ffi::c_void = unsafe { std::mem::transmute(f.filter) };
