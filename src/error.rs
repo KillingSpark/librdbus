@@ -21,9 +21,7 @@ pub extern "C" fn dbus_error_init(err: *mut DBusError) {
 }
 #[no_mangle]
 pub extern "C" fn dbus_error_free(err: *mut DBusError) {
-    let err = unsafe { &mut *err };
-    err.error = Box::new(String::new());
-    err.is_set = false;
+    dbus_error_init(err)
 }
 
 #[no_mangle]
@@ -53,5 +51,8 @@ pub extern "C" fn dbus_error_has_name(err: *mut DBusError, name: *const libc::c_
     };
     let name = c_str.to_str().unwrap();
 
+    if err.name.as_ref() as *const String == std::ptr::null() {
+        return dbus_bool(false);
+    }
     dbus_bool(err.name.as_ref().eq(name))
 }

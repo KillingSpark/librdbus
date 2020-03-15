@@ -434,7 +434,6 @@ pub extern "C" fn dbus_connection_send_with_reply<'a>(
     } else {
         Some(std::time::Duration::from_millis(timeout as u64))
     };
-    
     *pending = Box::into_raw(Box::new(DBusPendingCall::new(serial, timeout)));
     dbus_bool(true)
 }

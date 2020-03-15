@@ -9,11 +9,11 @@ mod tests {
 mod bus;
 mod connection;
 mod data_slot;
+mod error;
 mod message;
 mod message_iter;
 mod private;
 mod validate;
-mod error;
 use message::*;
 use rustbus::params;
 use std::ffi::CStr;
@@ -128,8 +128,25 @@ pub extern "C" fn dbus_free(data: *mut std::ffi::c_void) {
 }
 
 #[no_mangle]
-pub extern "C" fn dbus_bus_add_match() {
-    unimplemented!();
+pub extern "C" fn dbus_bus_add_match(
+    con: *mut connection::DBusConnection,
+    rule: *const libc::c_char,
+    err: *mut error::DBusError,
+) {
+    if con.is_null() {
+        return;
+    }
+    let con = unsafe { &mut *con };
+
+    let c_str = unsafe {
+        assert!(!rule.is_null());
+        std::ffi::CStr::from_ptr(rule)
+    };
+    let rule = c_str.to_str().unwrap();
+    let mut msg = rustbus::standard_messages::add_match(rule.to_owned());
+    con.con.send_message(&mut msg, None).unwrap();
+
+    // TODO set error
 }
 
 pub fn param_from_parts<'a>(
