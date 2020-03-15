@@ -75,7 +75,7 @@ pub extern "C" fn dbus_message_free_data_slot(slotp: *mut i32) {
     unref_slot(slotp, unsafe { &mut USED_SLOTS })
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AppData {
     pub slot: i32,
     pub data: *mut std::ffi::c_void,

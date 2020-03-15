@@ -21,10 +21,11 @@ pub fn get_cstring<'a>(arena: &'a mut StringArena, string: &str) -> &'a std::ffi
     arena.get(string).unwrap()
 }
 
-#[derive(Clone)]
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct DBusMessage<'a> {
-    pub msg: rustbus::Message<'a, 'a>,
-    refcount: u64,
+    pub msg: Box<rustbus::Message<'a, 'a>>,
+    ref_count: u64,
     pub string_arena: StringArena,
     locked: bool,
     pub app_data: Vec<crate::data_slot::AppData>,
@@ -34,8 +35,8 @@ pub struct DBusMessage<'a> {
 impl<'a> DBusMessage<'a> {
     pub fn new(msg: rustbus::Message<'a, 'a>) -> Self {
         Self {
-            msg,
-            refcount: 0,
+            msg: Box::new(msg),
+            ref_count: 1,
             string_arena: std::collections::HashMap::new(),
             locked: false,
             app_data: Vec::new(),
@@ -225,7 +226,7 @@ pub extern "C" fn dbus_message_copy(msg: *const DBusMessage) -> *mut DBusMessage
         let msg = unsafe { &*msg };
         let mut new_msg = msg.clone();
         new_msg.msg.serial = None;
-        new_msg.refcount = 1;
+        new_msg.ref_count = 1;
         Box::into_raw(Box::new(new_msg))
     }
 }
@@ -235,7 +236,7 @@ pub extern "C" fn dbus_message_ref(msg: *mut DBusMessage) -> *mut DBusMessage {
         std::ptr::null_mut()
     } else {
         let mut_msg = unsafe { &mut *msg };
-        mut_msg.refcount += 1;
+        mut_msg.ref_count += 1;
         msg
     }
 }
@@ -244,8 +245,8 @@ pub extern "C" fn dbus_message_unref(msg: *mut DBusMessage) {
     if msg.is_null() {
     } else {
         let msg = unsafe { &mut *msg };
-        msg.refcount -= 1;
-        if msg.refcount == 0 {
+        msg.ref_count -= 1;
+        if msg.ref_count == 0 {
             std::mem::drop(unsafe { Box::from_raw(msg) });
         }
     }
