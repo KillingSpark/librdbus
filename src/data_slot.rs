@@ -1,4 +1,5 @@
 use crate::dbus_bool;
+use crate::DBusFreeFunction;
 
 struct Slot {
     id: i32,
@@ -73,8 +74,6 @@ pub extern "C" fn dbus_message_free_data_slot(slotp: *mut i32) {
 
     unref_slot(slotp, unsafe { &mut USED_SLOTS })
 }
-
-pub type DBusFreeFunction = extern "C" fn(*mut std::ffi::c_void);
 
 #[derive(Clone)]
 pub struct AppData {

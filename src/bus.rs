@@ -1,5 +1,6 @@
 use crate::connection::*;
 use crate::*;
+use crate::error::*;
 
 #[no_mangle]
 pub extern "C" fn dbus_bus_register<'a>(con: *mut DBusConnection<'a>, err: *mut DBusError) -> u32 {

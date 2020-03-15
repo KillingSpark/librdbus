@@ -1,4 +1,5 @@
 use crate::*;
+use crate::error::*;
 use std::collections::VecDeque;
 
 #[derive(Eq, PartialEq, Debug)]
@@ -58,6 +59,13 @@ pub enum DBusDispatchStatus {
     NeedMemory,
 }
 
+pub struct MessageFilter {
+    filter: DBusHandleMessageFunction,
+    user_data: *mut std::ffi::c_void,
+    free: crate::DBusFreeFunction,
+}
+
+#[repr(C)]
 pub struct DBusConnection<'a> {
     pub con: rustbus::client_conn::Conn,
     pub ref_count: u64,
@@ -70,6 +78,10 @@ pub struct DBusConnection<'a> {
     pub pending_calls: Vec<*mut DBusPendingCall<'a>>,
 
     pub unique_name: Option<std::ffi::CString>,
+
+    pub route_peer_messages: bool,
+
+    pub filters: Vec<MessageFilter>,
 }
 
 impl<'a> DBusConnection<'a> {
@@ -83,6 +95,8 @@ impl<'a> DBusConnection<'a> {
             in_queue: VecDeque::new(),
             pending_calls: Vec::new(),
             unique_name: None,
+            route_peer_messages: false,
+            filters: Vec::new(),
         }
     }
 
@@ -95,7 +109,22 @@ impl<'a> DBusConnection<'a> {
         }
     }
 
-    pub fn dispatch_message(&mut self, msg: DBusMessage<'a>) {
+    pub fn dispatch_message(&mut self, mut msg: DBusMessage<'a>) {
+        let self_ptr = self as *mut Self;
+        for filter in &self.filters {
+            match (filter.filter)(self_ptr, &mut msg, filter.user_data) {
+                DBusHandlerResult::DBUS_HANDLER_RESULT_HANDLED => {
+                    return;
+                }
+                DBusHandlerResult::DBUS_HANDLER_RESULT_NEED_MEMORY => {
+                    panic!("No OOM handling implemented");
+                }
+                DBusHandlerResult::DBUS_HANDLER_RESULT_NOT_YET_HANDLED => {
+                    // Ok
+                }
+            }
+        }
+
         if let rustbus::MessageType::Reply = msg.msg.typ {
             if let Some(reply_serial) = msg.msg.response_serial {
                 for p in &mut self.pending_calls {
@@ -409,6 +438,7 @@ pub extern "C" fn dbus_connection_send_with_reply<'a>(
     *pending = Box::into_raw(Box::new(DBusPendingCall::new(serial, timeout)));
     dbus_bool(true)
 }
+
 #[no_mangle]
 pub extern "C" fn dbus_connection_send_with_reply_and_block<'a>(
     con: *mut DBusConnection<'a>,
@@ -441,4 +471,59 @@ pub extern "C" fn dbus_connection_send_with_reply_and_block<'a>(
         }
         Err(()) => std::ptr::null_mut(),
     }
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_connection_set_route_peer_messages<'a>(
+    con: *mut DBusConnection<'a>,
+    value: u32,
+) {
+    if con.is_null() {
+        return;
+    }
+    let con = unsafe { &mut *con };
+    con.route_peer_messages = value != 0;
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_connection_add_filter<'a>(
+    con: *mut DBusConnection<'a>,
+    filter: DBusHandleMessageFunction,
+    user_data: *mut std::ffi::c_void,
+    free: crate::DBusFreeFunction,
+) -> u32 {
+    if con.is_null() {
+        return dbus_bool(false);
+    }
+    let con = unsafe { &mut *con };
+    con.filters.push(MessageFilter {
+        filter,
+        user_data,
+        free,
+    });
+
+    dbus_bool(true)
+}
+
+#[no_mangle]
+pub extern "C" fn dbus_connection_remove_filter<'a>(
+    con: *mut DBusConnection<'a>,
+    filter: DBusHandleMessageFunction,
+    _user_data: *mut std::ffi::c_void,
+) {
+    if con.is_null() {
+        return;
+    }
+    let con = unsafe { &mut *con };
+
+    // this is necessaey because the DBusHandleMessageFunctions cannot be compared directly 
+    let filter_ptr: *const std::ffi::c_void = unsafe { std::mem::transmute(filter) };
+    for f in &con.filters {
+        let f_ptr: *const std::ffi::c_void = unsafe { std::mem::transmute(f.filter) };
+        if f_ptr == filter_ptr {}
+    }
+
+    // FIXME what happens with the userdata?
+    // Does it have to be the same as the original userdata?
+    // HUH?
 }

@@ -1,4 +1,5 @@
 use crate::dbus_bool;
+use crate::error::*;
 use rustbus::params;
 use std::ffi::CStr;
 
@@ -911,7 +912,7 @@ pub extern "C" fn dbus_message_has_signature(
 }
 #[no_mangle]
 pub extern "C" fn dbus_set_error_from_message(
-    err: *mut crate::DBusError,
+    err: *mut DBusError,
     msg: *mut crate::DBusMessage,
 ) -> u32 {
     if msg.is_null() {
@@ -1025,7 +1026,7 @@ pub extern "C" fn dbus_message_marshal(
 pub extern "C" fn dbus_message_demarshal<'a>(
     source: *mut *const libc::c_char,
     len: libc::c_int,
-    err: *mut crate::DBusError,
+    err: *mut DBusError,
 ) -> *mut DBusMessage<'a> {
     // needs to be mem::forget'd before exiting, the memory should not be freed by this function
     let buf = unsafe { Vec::from_raw_parts(source as *mut u8, len as usize, len as usize) };
@@ -1071,7 +1072,7 @@ pub extern "C" fn dbus_message_demarshal<'a>(
 pub extern "C" fn dbus_message_demarshal_bytes_needed(
     source: *mut *const libc::c_char,
     len: libc::c_int,
-    err: *mut crate::DBusError,
+    err: *mut DBusError,
 ) -> libc::c_int {
     // needs to be mem::forget'd before exiting, the memory should not be freed by this function
     let buf = unsafe { Vec::from_raw_parts(source as *mut u8, len as usize, len as usize) };

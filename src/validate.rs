@@ -1,4 +1,5 @@
 use crate::*;
+use crate::error::*;
 
 #[no_mangle]
 pub extern "C" fn dbus_validate_bus_name(s: *const libc::c_char, _err: *mut DBusError) -> u32 {

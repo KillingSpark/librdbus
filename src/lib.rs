@@ -13,6 +13,7 @@ mod message;
 mod message_iter;
 mod private;
 mod validate;
+mod error;
 use message::*;
 use rustbus::params;
 use std::ffi::CStr;
@@ -26,6 +27,22 @@ pub enum DBusBusType {
     DBUS_BUS_SYSTEM,
     DBUS_BUS_STARTER,
 }
+
+#[repr(C)]
+#[derive(Debug)]
+pub enum DBusHandlerResult {
+    DBUS_HANDLER_RESULT_HANDLED,
+    DBUS_HANDLER_RESULT_NOT_YET_HANDLED,
+    DBUS_HANDLER_RESULT_NEED_MEMORY,
+}
+
+pub type DBusFreeFunction = extern "C" fn(*mut std::ffi::c_void);
+
+pub type DBusHandleMessageFunction = fn(
+    *mut connection::DBusConnection,
+    *mut DBusMessage,
+    *mut std::ffi::c_void,
+) -> DBusHandlerResult;
 
 const METHOD_CALL_STR: &'static str = "method_call";
 const METHOD_RETURN_STR: &'static str = "method_return";
@@ -96,13 +113,6 @@ pub const DBUS_TYPE_VARIANT: libc::c_int = b'v' as libc::c_int;
 pub const DBUS_TYPE_STRUCT: libc::c_int = b'r' as libc::c_int;
 pub const DBUS_TYPE_DICTENTRY: libc::c_int = b'e' as libc::c_int;
 
-#[repr(C)]
-pub struct DBusError {
-    error: Box<String>,
-    name: Box<String>,
-    is_set: bool,
-}
-
 #[no_mangle]
 pub extern "C" fn dbus_malloc(size: libc::size_t) -> *mut std::ffi::c_void {
     if size == 0 {
@@ -115,39 +125,6 @@ pub extern "C" fn dbus_malloc(size: libc::size_t) -> *mut std::ffi::c_void {
 #[no_mangle]
 pub extern "C" fn dbus_free(data: *mut std::ffi::c_void) {
     unsafe { libc::free(data) }
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_error_init(err: *mut DBusError) {
-    assert!(!err.is_null());
-    let err = unsafe { &mut *err };
-    let mut new_err = DBusError {
-        error: Box::new(String::new()),
-        name: Box::new(String::new()),
-        is_set: false,
-    };
-    std::mem::swap(err, &mut new_err);
-    std::mem::forget(new_err);
-}
-#[no_mangle]
-pub extern "C" fn dbus_error_free(err: *mut DBusError) {
-    let err = unsafe { &mut *err };
-    err.error = Box::new(String::new());
-    err.is_set = false;
-}
-
-#[no_mangle]
-pub extern "C" fn dbus_error_is_set(err: *mut DBusError) -> libc::c_int {
-    if err.is_null() {
-        return 0;
-    }
-
-    let err: &mut DBusError = unsafe { &mut *err };
-    if err.is_set {
-        1
-    } else {
-        0
-    }
 }
 
 #[no_mangle]
