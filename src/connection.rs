@@ -188,15 +188,19 @@ pub extern "C" fn dbus_bus_get<'a>(
             return std::ptr::null_mut();
         }
     };
-    match path {
+    let con = match path {
         Ok(path) => match rustbus::client_conn::Conn::connect_to_bus(path, false) {
-            Ok(con) => Box::into_raw(Box::new(DBusConnection::new(con))),
+            Ok(mut con) => {
+                con.send_message(&mut rustbus::standard_messages::hello(), None)
+                    .unwrap();
+                Box::into_raw(Box::new(DBusConnection::new(con)))
+            }
             Err(e) => {
                 if !err.is_null() {
                     let err: &mut DBusError = unsafe { &mut *err };
                     err.error = Box::new(format!("Could not connect to bus: {:?}", e));
                 }
-                std::ptr::null_mut()
+                return std::ptr::null_mut();
             }
         },
         Err(e) => {
@@ -204,9 +208,10 @@ pub extern "C" fn dbus_bus_get<'a>(
                 let err: &mut DBusError = unsafe { &mut *err };
                 err.error = Box::new(format!("Could open path for bus: {:?}", e));
             }
-            std::ptr::null_mut()
+            return std::ptr::null_mut();
         }
-    }
+    };
+    con
 }
 
 #[no_mangle]
