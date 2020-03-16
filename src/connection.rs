@@ -191,6 +191,9 @@ pub extern "C" fn dbus_bus_get<'a>(
             Ok(mut con) => {
                 con.send_message(&mut rustbus::standard_messages::hello(), None)
                     .unwrap();
+
+                // TODO check this for an error response and return as such
+                con.get_next_message(None).unwrap();
                 Box::into_raw(Box::new(DBusConnection::new(con)))
             }
             Err(e) => {
