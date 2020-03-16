@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::*;
 use std::collections::VecDeque;
+use std::ops::Add;
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum ConState {
@@ -16,7 +17,7 @@ pub struct DBusPreallocatedSend {}
 pub struct DBusPendingCall<'a> {
     serial: u32,
     ref_count: u64,
-    timeout: Option<std::time::Duration>,
+    timeout: Option<std::time::Instant>,
     reply: Option<*mut DBusMessage<'a>>,
     mutex: std::sync::Mutex<()>,
     cond: std::sync::Condvar,
@@ -28,23 +29,19 @@ impl<'a> DBusPendingCall<'a> {
             serial,
             ref_count: 1,
             reply: None,
-            timeout,
+            timeout: timeout.map(|timeout| std::time::Instant::now().add(timeout)),
             cond: std::sync::Condvar::new(),
             mutex: std::sync::Mutex::new(()),
         }
     }
 
-    pub fn wait_for_reply(&mut self) -> Result<(), ()> {
+    pub fn timed_out(&self) -> bool {
         if let Some(timeout) = self.timeout {
-            match self.cond.wait_timeout(self.mutex.lock().unwrap(), timeout) {
-                Err(_) => Err(()),
-                Ok(_) => Ok(()),
-            }
+            timeout
+                .checked_duration_since(std::time::Instant::now())
+                .is_none()
         } else {
-            match self.cond.wait(self.mutex.lock().unwrap()) {
-                Err(_) => Err(()),
-                Ok(_) => Ok(()),
-            }
+            false
         }
     }
 }
@@ -111,19 +108,6 @@ impl<'a> DBusConnection<'a> {
 
     pub fn dispatch_message(&mut self, mut msg: DBusMessage<'a>) {
         let self_ptr = self as *mut Self;
-        for filter in &self.filters {
-            match (filter.filter)(self_ptr, &mut msg, filter.user_data) {
-                DBusHandlerResult::DBUS_HANDLER_RESULT_HANDLED => {
-                    return;
-                }
-                DBusHandlerResult::DBUS_HANDLER_RESULT_NEED_MEMORY => {
-                    panic!("No OOM handling implemented");
-                }
-                DBusHandlerResult::DBUS_HANDLER_RESULT_NOT_YET_HANDLED => {
-                    // Ok
-                }
-            }
-        }
 
         if let rustbus::MessageType::Reply = msg.msg.typ {
             if let Some(reply_serial) = msg.msg.response_serial {
@@ -134,6 +118,20 @@ impl<'a> DBusConnection<'a> {
                         p.cond.notify_all();
                         return;
                     }
+                }
+            }
+        }
+
+        for filter in &self.filters {
+            match (filter.filter)(self_ptr, &mut msg, filter.user_data) {
+                DBusHandlerResult::DBUS_HANDLER_RESULT_HANDLED => {
+                    return;
+                }
+                DBusHandlerResult::DBUS_HANDLER_RESULT_NEED_MEMORY => {
+                    panic!("No OOM handling implemented");
+                }
+                DBusHandlerResult::DBUS_HANDLER_RESULT_NOT_YET_HANDLED => {
+                    // Ok
                 }
             }
         }
@@ -379,9 +377,11 @@ pub extern "C" fn dbus_connection_read_write(
 pub extern "C" fn dbus_connection_read_write_dispatch(
     con: *mut DBusConnection,
     timeout: libc::c_int,
-) -> DBusDispatchStatus {
+) -> u32 {
     dbus_connection_read_write(con, timeout);
-    dbus_connection_dispatch(con)
+    dbus_connection_dispatch(con);
+    // TODO check for the Disconnect message and return false
+    dbus_bool(true)
 }
 
 #[no_mangle]
@@ -412,7 +412,7 @@ pub extern "C" fn dbus_connection_dispatch(con: *mut DBusConnection) -> DBusDisp
 pub extern "C" fn dbus_connection_send_with_reply<'a>(
     con: *mut DBusConnection<'a>,
     msg: *mut DBusMessage<'a>,
-    pending: *mut *mut DBusPendingCall,
+    pending: *mut *mut DBusPendingCall<'a>,
     timeout: libc::c_int,
 ) -> u32 {
     if con.is_null() {
@@ -439,7 +439,9 @@ pub extern "C" fn dbus_connection_send_with_reply<'a>(
     } else {
         Some(std::time::Duration::from_millis(timeout as u64))
     };
-    *pending = Box::into_raw(Box::new(DBusPendingCall::new(serial, timeout)));
+    let new_pending = Box::into_raw(Box::new(DBusPendingCall::new(serial, timeout)));
+    *pending = new_pending;
+    con.pending_calls.push(new_pending);
     dbus_bool(true)
 }
 
@@ -465,16 +467,13 @@ pub extern "C" fn dbus_connection_send_with_reply_and_block<'a>(
     let _ = err;
 
     let pending = unsafe { &mut *pending };
-    match pending.wait_for_reply() {
-        Ok(()) => {
-            if let Some(reply) = pending.reply {
-                reply
-            } else {
-                std::ptr::null_mut()
-            }
+    while !pending.timed_out() {
+        if let Some(reply) = pending.reply {
+            return reply;
         }
-        Err(()) => std::ptr::null_mut(),
+        dbus_connection_read_write_dispatch(con, timeout);
     }
+    std::ptr::null_mut()
 }
 
 #[no_mangle]

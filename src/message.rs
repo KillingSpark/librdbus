@@ -794,6 +794,8 @@ pub extern "C" fn dbus_message_is_method_call(msg: *mut crate::DBusMessage) -> u
     }
     let msg = unsafe { &mut *msg };
 
+    // FIXME check for interface etc like in signal
+
     dbus_bool(if let rustbus::MessageType::Call = msg.msg.typ {
         true
     } else {
@@ -801,17 +803,29 @@ pub extern "C" fn dbus_message_is_method_call(msg: *mut crate::DBusMessage) -> u
     })
 }
 #[no_mangle]
-pub extern "C" fn dbus_message_is_signal(msg: *mut crate::DBusMessage) -> u32 {
+pub extern "C" fn dbus_message_is_signal(
+    msg: *mut crate::DBusMessage,
+    interface: *const libc::c_char,
+    signal_name: *const libc::c_char,
+) -> u32 {
     if msg.is_null() {
         return 0;
     }
     let msg = unsafe { &mut *msg };
 
-    dbus_bool(if let rustbus::MessageType::Signal = msg.msg.typ {
-        true
+    if let rustbus::MessageType::Signal = msg.msg.typ {
+        if dbus_message_has_interface(msg, interface) == 1 {
+            if dbus_message_has_member(msg, signal_name) == 1 {
+                dbus_bool(true)
+            } else {
+                dbus_bool(false)
+            }
+        } else {
+            dbus_bool(false)
+        }
     } else {
-        false
-    })
+        dbus_bool(false)
+    }
 }
 #[no_mangle]
 pub extern "C" fn dbus_message_is_error(msg: *mut crate::DBusMessage) -> u32 {
@@ -819,6 +833,8 @@ pub extern "C" fn dbus_message_is_error(msg: *mut crate::DBusMessage) -> u32 {
         return 0;
     }
     let msg = unsafe { &mut *msg };
+
+    // FIXME check for interface etc like in signal
 
     dbus_bool(if let rustbus::MessageType::Error = msg.msg.typ {
         true
@@ -832,6 +848,8 @@ pub extern "C" fn dbus_message_is_reply(msg: *mut crate::DBusMessage) -> u32 {
         return 0;
     }
     let msg = unsafe { &mut *msg };
+
+    // FIXME check for interface etc like in signal
 
     dbus_bool(if let rustbus::MessageType::Reply = msg.msg.typ {
         true
