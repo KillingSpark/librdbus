@@ -7,6 +7,6 @@ pub extern "C" fn _dbus_get_real_time(secs: *mut libc::c_long, micro_secs: *mut 
         unsafe { *secs = dur.as_secs() as libc::c_long };
     }
     if !micro_secs.is_null() {
-        unsafe { *secs = dur.as_micros() as libc::c_long };
+        unsafe { *micro_secs = dur.subsec_micros() as libc::c_long };
     }
 }
